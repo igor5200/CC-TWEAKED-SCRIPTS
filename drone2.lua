@@ -1,3 +1,97 @@
+local front = peripheral.wrap("front")
+local back  = peripheral.wrap("back")
+local left  = peripheral.wrap("left")
+local right = peripheral.wrap("right")
+
+-- =========================================
+-- TARGET
+-- =========================================
+
+local TARGET_X = 100
+local TARGET_Y = 80
+local TARGET_Z = 200
+
+-- =========================================
+-- PD CONSTANTS
+-- =========================================
+
+local KP_X = 1.0
+local KD_X = 0.4
+
+local KP_Y = 1.0
+local KD_Y = 0.4
+
+local KP_Z = 1.0
+local KD_Z = 0.4
+
+-- Maksymalna zmiana RPM
+local MAX_CONTROL = 30
+
+-- Bazowa prędkość wirników
+local BASE_RPM = 20
+
+-- =========================================
+
+local function setSpeed(controller, speed)
+    speed = math.max(-256, math.min(256, speed))
+    controller.setTargetSpeed(speed)
+end
+
+local function stop()
+    setSpeed(front, 0)
+    setSpeed(back, 0)
+    setSpeed(left, 0)
+    setSpeed(right, 0)
+end
+
+local function getGPS()
+    local x, y, z = gps.locate(3)
+
+    if not x then
+        return nil
+    end
+
+    return x, y, z
+end
+
+-- =========================================
+-- START
+-- =========================================
+
+print("DRONE PD CONTROLLER")
+print("-------------------")
+
+local x, y, z = getGPS()
+
+if not x then
+    print("Brak GPS!")
+    return
+end
+
+local lastX = x
+local lastY = y
+local lastZ = z
+
+local lastTime = os.clock()
+
+print(string.format(
+    "START %.2f %.2f %.2f",
+    x, y, z
+))
+
+print(string.format(
+    "TARGET %.2f %.2f %.2f",
+    TARGET_X,
+    TARGET_Y,
+    TARGET_Z
+))
+
+sleep(1)
+
+-- =========================================
+-- MAIN LOOP
+-- =========================================
+
 while true do
 
     local currentX, currentY, currentZ = getGPS()
