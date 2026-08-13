@@ -1,203 +1,322 @@
+-- ==========================================
+-- SIMPLE DRONE PD CONTROLLER
+-- CC:Tweaked + Create Aeronautics
+-- ==========================================
+
+-- ==========================================
+-- MOTORS
+-- ==========================================
+
 local front = peripheral.wrap("front")
 local back  = peripheral.wrap("back")
 local left  = peripheral.wrap("left")
 local right = peripheral.wrap("right")
 
--- =========================================
+if not front or not back or not left or not right then
+    print("Brakuje Rotation Speed Controller!")
+    return
+end
+
+
+-- ==========================================
 -- TARGET
--- =========================================
+-- ==========================================
+
+-- USTAW TUTAJ CEL
 
 local TARGET_X = 100
 local TARGET_Y = 80
 local TARGET_Z = 200
 
--- =========================================
--- PD CONSTANTS
--- =========================================
 
-local KP_X = 1.0
-local KD_X = 0.4
+-- ==========================================
+-- SETTINGS
+-- ==========================================
 
-local KP_Y = 1.0
-local KD_Y = 0.4
-
-local KP_Z = 1.0
-local KD_Z = 0.4
+-- RPM potrzebne do utrzymania zawisu
+local HOVER_RPM = 50
 
 -- Maksymalna zmiana RPM
 local MAX_CONTROL = 30
 
--- Bazowa prędkość wirników
-local BASE_RPM = 20
+-- PD dla X
+local KP_X = 2.0
+local KD_X = 1.0
 
--- =========================================
+-- PD dla Y
+local KP_Y = 2.0
+local KD_Y = 1.0
 
-local function setSpeed(controller, speed)
-    speed = math.max(-256, math.min(256, speed))
-    controller.setTargetSpeed(speed)
+-- PD dla Z
+local KP_Z = 2.0
+local KD_Z = 1.0
+
+-- Jak często działa kontroler
+local DT = 0.05
+
+-- Tolerancja dotarcia
+local POSITION_TOLERANCE = 1.0
+
+
+-- ==========================================
+-- MOTOR FUNCTION
+-- ==========================================
+
+local function setMotors(frontRPM, backRPM, leftRPM, rightRPM)
+
+    front.setTargetSpeed(frontRPM)
+    back.setTargetSpeed(backRPM)
+    left.setTargetSpeed(leftRPM)
+    right.setTargetSpeed(rightRPM)
+
 end
 
-local function stop()
-    setSpeed(front, 0)
-    setSpeed(back, 0)
-    setSpeed(left, 0)
-    setSpeed(right, 0)
+
+local function stopMotors()
+
+    setMotors(0, 0, 0, 0)
+
 end
 
-local function getGPS()
-    local x, y, z = gps.locate(3)
+
+-- ==========================================
+-- CLAMP
+-- ==========================================
+
+local function clamp(value, min, max)
+
+    if value < min then
+        return min
+    end
+
+    if value > max then
+        return max
+    end
+
+    return value
+
+end
+
+
+-- ==========================================
+-- GPS
+-- ==========================================
+
+local function getPosition()
+
+    local x, y, z = gps.locate(2)
 
     if not x then
         return nil
     end
 
     return x, y, z
+
 end
 
--- =========================================
+
+-- ==========================================
 -- START
--- =========================================
+-- ==========================================
 
-print("DRONE PD CONTROLLER")
-print("-------------------")
+term.clear()
+term.setCursorPos(1, 1)
 
-local x, y, z = getGPS()
-
-if not x then
-    print("Brak GPS!")
-    return
-end
-
-local lastX = x
-local lastY = y
-local lastZ = z
-
-local lastTime = os.clock()
+print("================================")
+print("       DRONE PD CONTROLLER")
+print("================================")
+print("")
 
 print(string.format(
-    "START %.2f %.2f %.2f",
-    x, y, z
-))
-
-print(string.format(
-    "TARGET %.2f %.2f %.2f",
+    "TARGET: %.1f %.1f %.1f",
     TARGET_X,
     TARGET_Y,
     TARGET_Z
 ))
 
-sleep(1)
+print("")
 
--- =========================================
+local x, y, z = getPosition()
+
+if not x then
+
+    print("Brak GPS!")
+    return
+
+end
+
+print(string.format(
+    "START: %.1f %.1f %.1f",
+    x,
+    y,
+    z
+))
+
+print("")
+print("ENTER aby wystartowac")
+
+read()
+
+
+-- ==========================================
+-- PREVIOUS POSITION
+-- ==========================================
+
+local lastX = x
+local lastY = y
+local lastZ = z
+
+
+-- ==========================================
 -- MAIN LOOP
--- =========================================
+-- ==========================================
 
 while true do
 
-    local currentX, currentY, currentZ = getGPS()
+    -- ======================================
+    -- GPS
+    -- ======================================
+
+    local currentX, currentY, currentZ = getPosition()
 
     if not currentX then
-        print("Brak GPS!")
-        stop()
+
+        print("BRAK GPS!")
+
+        stopMotors()
+
         sleep(0.5)
+
     else
 
-        local now = os.clock()
-        local dt = now - lastTime
-
-        if dt <= 0 then
-            dt = 0.1
-        end
-
-        -- =====================================
+        -- ==================================
         -- POSITION ERROR
-        -- =====================================
+        -- ==================================
 
         local errorX = TARGET_X - currentX
         local errorY = TARGET_Y - currentY
         local errorZ = TARGET_Z - currentZ
 
-        -- =====================================
+
+        -- ==================================
         -- VELOCITY
-        -- =====================================
+        -- ==================================
 
         local velocityX =
-            (currentX - lastX) / dt
+            (currentX - lastX) / DT
 
         local velocityY =
-            (currentY - lastY) / dt
+            (currentY - lastY) / DT
 
         local velocityZ =
-            (currentZ - lastZ) / dt
+            (currentZ - lastZ) / DT
 
-        -- =====================================
+
+        -- ==================================
         -- PD CONTROLLER
-        -- =====================================
+        -- ==================================
 
         local controlX =
-            KP_X * errorX -
-            KD_X * velocityX
+            KP_X * errorX
+            - KD_X * velocityX
 
         local controlY =
-            KP_Y * errorY -
-            KD_Y * velocityY
+            KP_Y * errorY
+            - KD_Y * velocityY
 
         local controlZ =
-            KP_Z * errorZ -
-            KD_Z * velocityZ
+            KP_Z * errorZ
+            - KD_Z * velocityZ
 
-        -- Ograniczenie sterowania
 
-        controlX = math.max(
-            -MAX_CONTROL,
-            math.min(MAX_CONTROL, controlX)
+        -- ==================================
+        -- LIMIT CONTROL
+        -- ==================================
+
+        controlX =
+            clamp(
+                controlX,
+                -MAX_CONTROL,
+                MAX_CONTROL
+            )
+
+        controlY =
+            clamp(
+                controlY,
+                -MAX_CONTROL,
+                MAX_CONTROL
+            )
+
+        controlZ =
+            clamp(
+                controlZ,
+                -MAX_CONTROL,
+                MAX_CONTROL
+            )
+
+
+        -- ==================================
+        -- MOTOR MIXER
+        -- ==================================
+
+        local frontRPM =
+            HOVER_RPM
+            + controlY
+            + controlZ
+
+        local backRPM =
+            HOVER_RPM
+            + controlY
+            - controlZ
+
+        local leftRPM =
+            HOVER_RPM
+            + controlY
+            + controlX
+
+        local rightRPM =
+            HOVER_RPM
+            + controlY
+            - controlX
+
+
+        -- ==================================
+        -- LIMIT RPM
+        -- ==================================
+
+        frontRPM = math.max(0, frontRPM)
+        backRPM  = math.max(0, backRPM)
+        leftRPM  = math.max(0, leftRPM)
+        rightRPM = math.max(0, rightRPM)
+
+
+        -- ==================================
+        -- SEND TO MOTORS
+        -- ==================================
+
+        setMotors(
+            frontRPM,
+            backRPM,
+            leftRPM,
+            rightRPM
         )
 
-        controlY = math.max(
-            -MAX_CONTROL,
-            math.min(MAX_CONTROL, controlY)
-        )
 
-        controlZ = math.max(
-            -MAX_CONTROL,
-            math.min(MAX_CONTROL, controlZ)
-        )
+        -- ==================================
+        -- DISTANCE
+        -- ==================================
 
-        -- =====================================
-        -- MOTOR MIXING
-        -- =====================================
+        local distance =
+            math.sqrt(
+                errorX * errorX +
+                errorY * errorY +
+                errorZ * errorZ
+            )
 
-        local frontRPM = BASE_RPM
-        local backRPM  = BASE_RPM
-        local leftRPM  = BASE_RPM
-        local rightRPM = BASE_RPM
 
-        -- X
-        leftRPM  = leftRPM  + controlX
-        rightRPM = rightRPM - controlX
-
-        -- Z
-        frontRPM = frontRPM + controlZ
-        backRPM  = backRPM  - controlZ
-
-        -- Y
-        frontRPM = frontRPM + controlY
-        backRPM  = backRPM + controlY
-        leftRPM  = leftRPM + controlY
-        rightRPM = rightRPM + controlY
-
-        -- =====================================
-        -- SEND RPM
-        -- =====================================
-
-        setSpeed(front, frontRPM)
-        setSpeed(back, backRPM)
-        setSpeed(left, leftRPM)
-        setSpeed(right, rightRPM)
-
-        -- =====================================
+        -- ==================================
         -- DISPLAY
-        -- =====================================
+        -- ==================================
 
         term.clear()
         term.setCursorPos(1, 1)
@@ -206,21 +325,32 @@ while true do
         print("-------------------")
 
         print(string.format(
-            "POS %.1f %.1f %.1f",
+            "POS %.2f %.2f %.2f",
             currentX,
             currentY,
             currentZ
         ))
 
         print(string.format(
-            "ERR %.1f %.1f %.1f",
+            "TARGET %.2f %.2f %.2f",
+            TARGET_X,
+            TARGET_Y,
+            TARGET_Z
+        ))
+
+        print("")
+
+        print(string.format(
+            "ERROR %.2f %.2f %.2f",
             errorX,
             errorY,
             errorZ
         ))
 
+        print("")
+
         print(string.format(
-            "VEL %.1f %.1f %.1f",
+            "VEL %.2f %.2f %.2f",
             velocityX,
             velocityY,
             velocityZ
@@ -229,7 +359,7 @@ while true do
         print("")
 
         print(string.format(
-            "PD %.1f %.1f %.1f",
+            "CTRL %.2f %.2f %.2f",
             controlX,
             controlY,
             controlZ
@@ -249,36 +379,41 @@ while true do
             rightRPM
         ))
 
-        -- =====================================
-        -- TARGET CHECK
-        -- =====================================
+        print("")
 
-        local distance = math.sqrt(
-            errorX^2 +
-            errorY^2 +
-            errorZ^2
-        )
+        print(string.format(
+            "DISTANCE %.2f",
+            distance
+        ))
 
-        if distance < 1 then
+
+        -- ==================================
+        -- TARGET REACHED
+        -- ==================================
+
+        if distance < POSITION_TOLERANCE then
 
             print("")
             print("TARGET REACHED!")
 
-            stop()
+            stopMotors()
 
             break
+
         end
 
-        -- =====================================
-        -- SAVE STATE
-        -- =====================================
+
+        -- ==================================
+        -- SAVE POSITION
+        -- ==================================
 
         lastX = currentX
         lastY = currentY
         lastZ = currentZ
 
-        lastTime = now
 
-        sleep(0.1)
+        sleep(DT)
+
     end
+
 end
