@@ -1,20 +1,22 @@
 -- ============================================================
--- stabilizer.lua v2
+-- DRONE STABILIZER v3
 --
--- Create: Aeronautics / Avionics
+-- Create Aeronautics / Avionics
 -- CC:Tweaked
 --
--- 4x Rotation Speed Controller:
+-- 4x RSC:
 --   front
 --   back
 --   left
 --   right
 --
--- 1x Gimbal Sensor
+-- Gimbal Sensor:
+--   pitch
+--   roll
+--   pitch rate
+--   roll rate
 --
--- AUTOMATYCZNA KALIBRACJA MOMENTU
--- AUTOMATYCZNA STABILIZACJA PITCH + ROLL
---
+-- AUTOMATYCZNA KALIBRACJA
 -- ============================================================
 
 
@@ -52,55 +54,43 @@ end
 
 
 -- ============================================================
--- KONFIGURACJA
+-- SETTINGS
 -- ============================================================
 
--- RPM, przy którym DRON JUŻ POTRAFI ZAWISAĆ.
---
--- Przykład:
--- local BASE_RPM = 140
---
+-- USTAW NA RPM, PRZY KTÓRYM DRON POTRAFI ZAWISAĆ
 local BASE_RPM = 140
 
-
--- Ile RPM dodajemy podczas automatycznego testu.
---
--- Nie ustawiaj bardzo dużej wartości.
+-- Wielkość impulsu kalibracyjnego
 local TEST_RPM = 8
 
-
--- Jak długo trwa impuls testowy.
+-- Czas impulsu
 local TEST_TIME = 0.20
 
-
--- Czas oczekiwania po impulsie.
+-- Czas stabilizacji pomiędzy testami
 local SETTLE_TIME = 0.30
 
 
--- PD stabilizatora.
---
--- Na początek umiarkowane wartości.
-local KP_PITCH = 35
-local KD_PITCH = 10
+-- ============================================================
+-- PD
+-- ============================================================
 
-local KP_ROLL = 35
-local KD_ROLL = 10
+local KP_PITCH = 30
+local KD_PITCH = 8
+
+local KP_ROLL = 30
+local KD_ROLL = 8
 
 
--- Maksymalna zmiana RPM od BASE.
+-- Maksymalna korekta od BASE
 local MAX_CORRECTION = 35
 
-
--- Maksymalne RPM RSC.
 local MAX_RPM = 256
 
-
--- Częstotliwość regulatora.
 local DT = 0.05
 
 
 -- ============================================================
--- UTIL
+-- UTILITY
 -- ============================================================
 
 local function clamp(x, minValue, maxValue)
@@ -127,6 +117,10 @@ local function setAll(rpm)
 
 end
 
+
+-- ============================================================
+-- MOTOR TABLE
+-- ============================================================
 
 local motors = {
     {
@@ -158,14 +152,14 @@ local motors = {
 local function readSensor()
 
     local angles = sensor.getAnglesRad()
-    local rates  = sensor.getAngularRatesRad()
+    local rates = sensor.getAngularRatesRad()
 
     return {
         pitch = angles[1],
-        roll  = angles[2],
+        roll = angles[2],
 
         pitchRate = rates[1],
-        rollRate  = rates[3]
+        rollRate = rates[3]
     }
 
 end
@@ -179,17 +173,13 @@ term.clear()
 term.setCursorPos(1, 1)
 
 print("================================")
-print("       DRONE STABILIZER v2")
+print("       DRONE STABILIZER v3")
 print("================================")
 print("")
 print("BASE RPM:", BASE_RPM)
 print("")
-print("Automatyczna kalibracja.")
-print("")
-print("Dron musi miec mozliwosc")
-print("swobodnego przechylenia sie.")
-print("")
-print("Start za 3 sekundy...")
+print("Automatyczna kalibracja")
+print("rozpocznie sie za 3 sekundy.")
 print("")
 
 sleep(1)
@@ -201,7 +191,7 @@ print("1...")
 
 
 -- ============================================================
--- START BASE RPM
+-- BASE RPM
 -- ============================================================
 
 setAll(BASE_RPM)
@@ -210,12 +200,12 @@ sleep(1)
 
 
 -- ============================================================
--- KALIBRACJA
+-- CALIBRATION
 -- ============================================================
 
 print("")
 print("================================")
-print("      ROZPOCZYNAM KALIBRACJE")
+print("         KALIBRACJA")
 print("================================")
 print("")
 
@@ -225,301 +215,219 @@ local effects = {}
 
 for i, data in ipairs(motors) do
 
-    print("")
     print("TEST:", data.name)
-    print("")
 
-
-    -- --------------------------------------------------------
-    -- Wszystkie silniki wracają do BASE
-    -- --------------------------------------------------------
-
+    -- Wszystkie na BASE
     setAll(BASE_RPM)
 
     sleep(SETTLE_TIME)
 
 
-    -- --------------------------------------------------------
+    -- --------------------------------
     -- Odczyt przed impulsem
-    -- --------------------------------------------------------
+    -- --------------------------------
 
     local before = readSensor()
 
 
-    -- --------------------------------------------------------
-    -- Zwiekszamy tylko jeden RSC
-    -- --------------------------------------------------------
+    -- --------------------------------
+    -- Impuls
+    -- --------------------------------
 
     data.rsc.setTargetSpeed(
         BASE_RPM + TEST_RPM
     )
 
-
     sleep(TEST_TIME)
 
 
-    -- --------------------------------------------------------
+    -- --------------------------------
     -- Odczyt po impulsie
-    -- --------------------------------------------------------
+    -- --------------------------------
 
     local after = readSensor()
 
 
-    -- --------------------------------------------------------
-    -- Natychmiast wracamy do BASE
-    -- --------------------------------------------------------
+    -- --------------------------------
+    -- Powrót
+    -- --------------------------------
 
     data.rsc.setTargetSpeed(BASE_RPM)
-
 
     sleep(SETTLE_TIME)
 
 
-    -- --------------------------------------------------------
-    -- Zmiana predkosci katowej
-    --
-    -- To jest najwazniejszy pomiar.
-    -- --------------------------------------------------------
+    -- --------------------------------
+    -- Efekt
+    -- --------------------------------
 
-    local pitchRateDelta =
+    local pitchDelta =
         after.pitchRate - before.pitchRate
 
-    local rollRateDelta =
+    local rollDelta =
         after.rollRate - before.rollRate
 
 
-    -- --------------------------------------------------------
-    -- Przyblizona odpowiedz na 1 RPM
-    -- --------------------------------------------------------
-
     local pitchEffect =
-        pitchRateDelta / TEST_RPM
+        pitchDelta / TEST_RPM
 
     local rollEffect =
-        rollRateDelta / TEST_RPM
+        rollDelta / TEST_RPM
 
 
     effects[i] = {
-
         pitch = pitchEffect,
         roll = rollEffect
-
     }
 
 
     print(
-        data.name,
-        "pitch=",
-        string.format("%.5f", pitchEffect),
-        "roll=",
-        string.format("%.5f", rollEffect)
+        string.format(
+            "%s P: %.6f R: %.6f",
+            data.name,
+            pitchEffect,
+            rollEffect
+        )
     )
+
+    print("")
 
 end
 
 
 -- ============================================================
--- WYSWIETLENIE MACIERZY
+-- PRINT MATRIX
 -- ============================================================
 
-print("")
 print("================================")
-print("      MACIERZ SILNIKOW")
+print("      WYNIK KALIBRACJI")
 print("================================")
 print("")
 
 for i, data in ipairs(motors) do
 
     print(
-        data.name,
-        "P:",
-        string.format("%.5f", effects[i].pitch),
-        "R:",
-        string.format("%.5f", effects[i].roll)
+        string.format(
+            "%-6s P:% .6f R:% .6f",
+            data.name,
+            effects[i].pitch,
+            effects[i].roll
+        )
     )
 
 end
 
 
 -- ============================================================
--- SPRAWDZENIE, CZY SENSOR WIDZI SILNIKI
+-- FIND PITCH / ROLL AUTHORITY
 -- ============================================================
 
-local pitchPower = 0
-local rollPower = 0
-
-for i = 1, 4 do
-
-    pitchPower =
-        pitchPower +
-        effects[i].pitch *
-        effects[i].pitch
-
-    rollPower =
-        rollPower +
-        effects[i].roll *
-        effects[i].roll
-
-end
-
-
-print("")
-
-print(
-    "Pitch authority:",
-    string.format("%.6f", pitchPower)
-)
-
-print(
-    "Roll authority:",
-    string.format("%.6f", rollPower)
-)
-
-
-if pitchPower < 0.0000001 then
-
-    setAll(0)
-
-    error(
-        "Kalibracja pitch nieudana."
-    )
-
-end
-
-
-if rollPower < 0.0000001 then
-
-    setAll(0)
-
-    error(
-        "Kalibracja roll nieudana."
-    )
-
-end
-
-
--- ============================================================
--- MACIERZ A
---
--- A =
---
--- [ p1 p2 p3 p4 ]
--- [ r1 r2 r3 r4 ]
---
---
--- Potrzebujemy:
---
--- deltaRPM =
---
--- A^T * inverse(A*A^T) * desired
---
--- Jest to pseudoodwrotność macierzy A.
--- ============================================================
-
-
-local a11 = 0
-local a12 = 0
-local a22 = 0
+local pitchMax = 0
+local rollMax = 0
 
 
 for i = 1, 4 do
 
-    local p = effects[i].pitch
-    local r = effects[i].roll
+    pitchMax = math.max(
+        pitchMax,
+        math.abs(effects[i].pitch)
+    )
 
-    a11 = a11 + p * p
-    a12 = a12 + p * r
-    a22 = a22 + r * r
-
-end
-
-
--- ============================================================
--- INVERSE 2x2
--- ============================================================
-
-local determinant =
-    a11 * a22 -
-    a12 * a12
-
-
-if math.abs(determinant) < 0.000000001 then
-
-    setAll(0)
-
-    error(
-        "Macierz kalibracji jest osobliwa."
+    rollMax = math.max(
+        rollMax,
+        math.abs(effects[i].roll)
     )
 
 end
 
 
-local inv11 =  a22 / determinant
-local inv12 = -a12 / determinant
-local inv21 = -a12 / determinant
-local inv22 =  a11 / determinant
+print("")
+print("Pitch max:", pitchMax)
+print("Roll max :", rollMax)
 
 
--- ============================================================
--- FUNKCJA MIXERA
--- ============================================================
+if pitchMax < 0.000001 then
 
-local function calculateMotorCorrections(
-    desiredPitch,
-    desiredRoll
-)
+    setAll(0)
 
-    -- --------------------------------------------------------
-    -- Najpierw:
-    --
-    -- q = inverse(A*A^T) * desired
-    -- --------------------------------------------------------
+    error(
+        "Nie wykryto sterowania PITCH"
+    )
 
-    local qPitch =
-        inv11 * desiredPitch +
-        inv12 * desiredRoll
-
-    local qRoll =
-        inv21 * desiredPitch +
-        inv22 * desiredRoll
+end
 
 
-    -- --------------------------------------------------------
-    -- Następnie:
-    --
-    -- delta = A^T * q
-    -- --------------------------------------------------------
+if rollMax < 0.000001 then
 
-    local result = {}
+    setAll(0)
 
-
-    for i = 1, 4 do
-
-        local p = effects[i].pitch
-        local r = effects[i].roll
-
-        result[i] =
-            p * qPitch +
-            r * qRoll
-
-    end
-
-
-    return result
+    error(
+        "Nie wykryto sterowania ROLL"
+    )
 
 end
 
 
 -- ============================================================
--- GOTOWE
+-- NORMALIZATION
+-- ============================================================
+--
+-- Normalizujemy wpływ każdego silnika.
+--
+-- Dzięki temu:
+--
+-- największy pitch effect = 1
+-- największy roll effect  = 1
+--
+-- ============================================================
+
+local normalized = {}
+
+
+for i = 1, 4 do
+
+    normalized[i] = {
+
+        pitch =
+            effects[i].pitch / pitchMax,
+
+        roll =
+            effects[i].roll / rollMax
+
+    }
+
+end
+
+
+print("")
+print("================================")
+print("       NORMALIZED MIXER")
+print("================================")
+print("")
+
+
+for i, data in ipairs(motors) do
+
+    print(
+        string.format(
+            "%-6s P:% .3f R:% .3f",
+            data.name,
+            normalized[i].pitch,
+            normalized[i].roll
+        )
+    )
+
+end
+
+
+-- ============================================================
+-- READY
 -- ============================================================
 
 print("")
 print("================================")
-print("       KALIBRACJA GOTOWA")
+print("      STABILIZER READY")
 print("================================")
-print("")
-print("Uruchamiam PD stabilizer...")
 print("")
 
 sleep(2)
@@ -535,91 +443,45 @@ while true do
 
 
     -- ========================================================
-    -- CEL
-    --
-    -- pitch = 0
-    -- roll  = 0
+    -- PITCH PD
     -- ========================================================
 
-    local desiredPitch =
+    local pitchCommand =
         -state.pitch * KP_PITCH
         -state.pitchRate * KD_PITCH
 
 
-    local desiredRoll =
+    -- ========================================================
+    -- ROLL PD
+    -- ========================================================
+
+    local rollCommand =
         -state.roll * KP_ROLL
         -state.rollRate * KD_ROLL
 
 
     -- ========================================================
-    -- OGRANICZENIE ZADANIA
+    -- LIMIT
     -- ========================================================
 
-    desiredPitch =
+    pitchCommand =
         clamp(
-            desiredPitch,
+            pitchCommand,
             -MAX_CORRECTION,
             MAX_CORRECTION
         )
 
 
-    desiredRoll =
+    rollCommand =
         clamp(
-            desiredRoll,
+            rollCommand,
             -MAX_CORRECTION,
             MAX_CORRECTION
         )
 
 
     -- ========================================================
-    -- MACIERZ MIXERA
-    -- ========================================================
-
-    local correction =
-        calculateMotorCorrections(
-            desiredPitch,
-            desiredRoll
-        )
-
-
-    -- ========================================================
-    -- NORMALIZACJA KOREKCJI
-    --
-    -- Nie pozwalamy, żeby pojedynczy RSC
-    -- dostał absurdalną wartość.
-    -- ========================================================
-
-    local biggest = 0
-
-    for i = 1, 4 do
-
-        local value =
-            math.abs(correction[i])
-
-        if value > biggest then
-            biggest = value
-        end
-
-    end
-
-
-    if biggest > MAX_CORRECTION then
-
-        local scale =
-            MAX_CORRECTION / biggest
-
-        for i = 1, 4 do
-
-            correction[i] =
-                correction[i] * scale
-
-        end
-
-    end
-
-
-    -- ========================================================
-    -- FINAL RPM
+    -- MIX
     -- ========================================================
 
     local rpm = {}
@@ -627,9 +489,31 @@ while true do
 
     for i = 1, 4 do
 
+        local pitchPart =
+            normalized[i].pitch *
+            pitchCommand
+
+
+        local rollPart =
+            normalized[i].roll *
+            rollCommand
+
+
+        local correction =
+            pitchPart + rollPart
+
+
+        correction =
+            clamp(
+                correction,
+                -MAX_CORRECTION,
+                MAX_CORRECTION
+            )
+
+
         rpm[i] =
             clamp(
-                BASE_RPM + correction[i],
+                BASE_RPM + correction,
                 0,
                 MAX_RPM
             )
@@ -638,13 +522,32 @@ while true do
 
 
     -- ========================================================
-    -- RSC
+    -- OUTPUT
     -- ========================================================
 
     front.setTargetSpeed(rpm[1])
     back.setTargetSpeed(rpm[2])
     left.setTargetSpeed(rpm[3])
     right.setTargetSpeed(rpm[4])
+
+
+    -- ========================================================
+    -- DEBUG
+    -- ========================================================
+
+    -- Odkomentuj, jeśli chcesz widzieć dane:
+    --
+    -- print(
+    --     string.format(
+    --         "P %.2f R %.2f | RPM %.1f %.1f %.1f %.1f",
+    --         state.pitch,
+    --         state.roll,
+    --         rpm[1],
+    --         rpm[2],
+    --         rpm[3],
+    --         rpm[4]
+    --     )
+    -- )
 
 
     sleep(DT)
