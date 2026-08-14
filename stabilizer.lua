@@ -4,12 +4,6 @@ local back  = peripheral.wrap("back")
 local left  = peripheral.wrap("left")
 local right = peripheral.wrap("right")
 
-if not top then error("Brak top") end
-if not front then error("Brak front") end
-if not back then error("Brak back") end
-if not left then error("Brak left") end
-if not right then error("Brak right") end
-
 local HOVER_RPM = 111
 local TEST_RPM = 20
 local TEST_TIME = 3
@@ -22,11 +16,10 @@ local function stopSides()
     right.setTargetSpeed(0)
 end
 
-local function test(name, propeller)
-    print("TEST: " .. name)
-    print("RPM: " .. TEST_RPM)
+local function test(name, propeller, rpm)
+    print("TEST: " .. name .. " | " .. rpm .. " RPM")
 
-    propeller.setTargetSpeed(TEST_RPM)
+    propeller.setTargetSpeed(rpm)
 
     sleep(TEST_TIME)
 
@@ -36,31 +29,20 @@ local function test(name, propeller)
     sleep(PAUSE)
 end
 
--- Wszystkie boczne wyłączone
 stopSides()
 
--- Uruchomienie głównego ciągu
+-- Główny ciąg
 top.setTargetSpeed(HOVER_RPM)
 
-print("=== DRONE PROP TEST ===")
-print("Hover RPM: " .. HOVER_RPM)
-print("Stabilizacja...")
+print("Hover...")
 sleep(5)
 
--- FRONT
-test("FRONT", front)
+-- Kierunki obrotu śmigieł
+test("FRONT", front,  TEST_RPM)
+test("BACK",  back,  -TEST_RPM)
+test("LEFT",  left,  -TEST_RPM)
+test("RIGHT", right,  TEST_RPM)
 
--- BACK
-test("BACK", back)
-
--- LEFT
-test("LEFT", left)
-
--- RIGHT
-test("RIGHT", right)
-
--- Koniec
 stopSides()
 
-print("=== TEST ZAKONCZONY ===")
-print("TOP nadal pracuje na " .. HOVER_RPM .. " RPM")
+print("TEST ZAKONCZONY")
