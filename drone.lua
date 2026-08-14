@@ -1,94 +1,114 @@
-local top   = peripheral.wrap("Create_RotationSpeedController_0")
-local left  = peripheral.wrap("left")
-local right = peripheral.wrap("right")
+local nav = peripheral.wrap("navigation_table_0")
+local gimbal = peripheral.wrap("gimbal_sensor_0")
 
-local HOVER_RPM = 111
-
--- Siła sterowania
-local KP = 8
-
--- Maksymalna moc bocznego propelera
-local MAX_RPM = 50
-
--- Tolerancja pozycji
-local TOLERANCE = 0.2
-
--- Wszystko boczne zatrzymane
-left.setTargetSpeed(0)
-right.setTargetSpeed(0)
-
--- Rozpocznij zawis
-top.setTargetSpeed(HOVER_RPM)
-
-print("Stabilizacja zawisu...")
-sleep(3)
-
--- Pobierz pozycję początkową
-local x, y, z = gps.locate(2)
-
-if not x then
-    error("Brak GPS")
+if not nav then
+    error("Brak navigation_table_0")
 end
 
--- Lecimy 5 bloków w prawo
-local targetX = x + 5
+if not gimbal then
+    error("Brak gimbal_sensor_0")
+end
 
-print("Start X: " .. x)
-print("Cel X:   " .. targetX)
+print("=== DIRECTION TESTER ===")
+print("Nie steruje propellerami.")
+print()
 
 while true do
+    local heading = nav.getHeadingRad()
 
-    local currentX = select(1, gps.locate(2))
+    local pitch, roll = gimbal.getAnglesRad()
 
-    if not currentX then
-        left.setTargetSpeed(0)
-        right.setTargetSpeed(0)
-        sleep(0.1)
-    else
+    -- Kierunek FRONT drona w układzie świata.
+    --
+    -- Navigation Table:
+    -- heading = 0 oznacza FRONT w +Z
+    --
+    -- Przyjmujemy:
+    -- world X = wschód/zachód
+    -- world Z = północ/południe
 
-        local errorX = targetX - currentX
+    local frontX = math.sin(heading)
+    local frontZ = math.cos(heading)
 
-        -- Dotarliśmy do celu
-        if math.abs(errorX) <= TOLERANCE then
-            right.setTargetSpeed(0)
-            left.setTargetSpeed(0)
+    -- Prawa strona drona jest obrócona o +90°
+    local rightX = math.cos(heading)
+    local rightZ = -math.sin(heading)
 
-            print("CEL OSIAGNIETY!")
-            print("X = " .. currentX)
+    term.clear()
+    term.setCursorPos(1, 1)
 
-            break
-        end
+    print("=== DIRECTION TESTER ===")
+    print()
 
-        -- Im dalej od celu, tym większy ciąg
-        local rpm = errorX * KP
+    print(string.format(
+        "Heading : %7.2f deg",
+        math.deg(heading)
+    ))
 
-        -- Ograniczenie
-        rpm = math.max(-MAX_RPM, math.min(MAX_RPM, rpm))
+    print(string.format(
+        "Pitch   : %7.2f deg",
+        math.deg(pitch)
+    ))
 
-        if rpm > 0 then
-            -- Ruch X+
-            right.setTargetSpeed(rpm)
-            left.setTargetSpeed(0)
+    print(string.format(
+        "Roll    : %7.2f deg",
+        math.deg(roll)
+    ))
 
-        else
-            -- Ruch X-
-            left.setTargetSpeed(rpm)
-            right.setTargetSpeed(0)
-        end
+    print()
+    print("FRONT vector:")
+    print(string.format(
+        "  X = %+0.3f",
+        frontX
+    ))
+    print(string.format(
+        "  Z = %+0.3f",
+        frontZ
+    ))
 
-        print(string.format(
-            "X: %.2f | Cel: %.2f | Blad: %.2f | RPM: %.2f",
-            currentX,
-            targetX,
-            errorX,
-            rpm
-        ))
+    print()
+    print("RIGHT vector:")
+    print(string.format(
+        "  X = %+0.3f",
+        rightX
+    ))
+    print(string.format(
+        "  Z = %+0.3f",
+        rightZ
+    ))
 
-        sleep(0.1)
-    end
+    print()
+    print("WORLD X+ expressed in drone coordinates:")
+
+    -- Rzut światowego X+ na lokalny FRONT/RIGHT
+    local localFrontX = frontX
+    local localRightX = rightX
+
+    print(string.format(
+        "  FRONT = %+0.3f",
+        localFrontX
+    ))
+
+    print(string.format(
+        "  RIGHT = %+0.3f",
+        localRightX
+    ))
+
+    print()
+    print("WORLD Z+ expressed in drone coordinates:")
+
+    local localFrontZ = frontZ
+    local localRightZ = rightZ
+
+    print(string.format(
+        "  FRONT = %+0.3f",
+        localFrontZ
+    ))
+
+    print(string.format(
+        "  RIGHT = %+0.3f",
+        localRightZ
+    ))
+
+    sleep(0.2)
 end
-
-left.setTargetSpeed(0)
-right.setTargetSpeed(0)
-
-print("Zakonczono.")
