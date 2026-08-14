@@ -10,7 +10,7 @@ if not nav then
 end
 
 if not front or not back or not left or not right then
-    error("Nie znaleziono wszystkich Rotation Speed Controllerow")
+    error("Nie znaleziono wszystkich Rotation Speed Controllerów")
 end
 
 
@@ -18,21 +18,20 @@ end
 -- USTAWIENIA
 --------------------------------------------------
 
--- Punkt, przy którym dron zaczyna się unosić
+-- Tutaj zmieniasz podstawowe RPM drona
 local BASE_RPM = 70
 
--- Maksymalna korekta pojedynczego silnika
-local MAX_CORRECTION = 15
+-- Maksymalna korekta względem BASE_RPM
+local MAX_CORRECTION = 12
 
--- Wzmocnienie P
-local KP_ROLL = 8
-local KP_PITCH = 8
+-- Stabilizacja
+local KP_ROLL  = 5
+local KD_ROLL  = 1.5
 
--- Wzmocnienie D
-local KD_ROLL = 2
-local KD_PITCH = 2
+local KP_PITCH = 5
+local KD_PITCH = 1.5
 
--- Jak często działa kontroler
+-- Częstotliwość sterowania
 local DT = 0.05
 
 
@@ -40,22 +39,45 @@ local DT = 0.05
 -- QUATERNION
 --------------------------------------------------
 
-local function quaternionMultiply(a, b)
+local function normalizeQuaternion(q)
+
+    local length = math.sqrt(
+        q[1] * q[1] +
+        q[2] * q[2] +
+        q[3] * q[3] +
+        q[4] * q[4]
+    )
+
     return {
-        a[4] * b[1] + a[1] * b[4] + a[2] * b[3] - a[3] * b[2],
-        a[4] * b[2] - a[1] * b[3] + a[2] * b[4] + a[3] * b[1],
-        a[4] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[4],
-        a[4] * b[4] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3]
+        q[1] / length,
+        q[2] / length,
+        q[3] / length,
+        q[4] / length
     }
 end
 
 
 local function quaternionInverse(q)
+
     return {
         -q[1],
         -q[2],
         -q[3],
         q[4]
+    }
+end
+
+
+local function quaternionMultiply(a, b)
+
+    return {
+        a[4] * b[1] + a[1] * b[4] + a[2] * b[3] - a[3] * b[2],
+
+        a[4] * b[2] - a[1] * b[3] + a[2] * b[4] + a[3] * b[1],
+
+        a[4] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[4],
+
+        a[4] * b[4] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3]
     }
 end
 
@@ -66,34 +88,41 @@ end
 
 local function getAngles(q)
 
+    q = normalizeQuaternion(q)
+
     local x = q[1]
     local y = q[2]
     local z = q[3]
     local w = q[4]
 
     -- Roll
-    local sinRoll = 2 * (w * x + y * z)
-    local cosRoll = 1 - 2 * (x * x + y * y)
+    local sinRoll =
+        2 * (w * x + y * z)
 
-    local roll = math.atan2(sinRoll, cosRoll)
+    local cosRoll =
+        1 - 2 * (x * x + y * y)
+
+    local roll =
+        math.atan2(sinRoll, cosRoll)
+
 
     -- Pitch
-    local sinPitch = 2 * (w * y - z * x)
+    local sinPitch =
+        2 * (w * y - z * x)
 
-    if sinPitch > 1 then
-        sinPitch = 1
-    elseif sinPitch < -1 then
-        sinPitch = -1
-    end
+    sinPitch =
+        math.max(-1, math.min(1, sinPitch))
 
-    local pitch = math.asin(sinPitch)
+    local pitch =
+        math.asin(sinPitch)
+
 
     return math.deg(roll), math.deg(pitch)
 end
 
 
 --------------------------------------------------
--- POMOCNICZE
+-- CLAMP
 --------------------------------------------------
 
 local function clamp(value, min, max)
@@ -111,37 +140,24 @@ end
 
 
 --------------------------------------------------
--- AUTOMATYCZNA REFERENCJA
+-- POCZĄTKOWA ORIENTACJA
 --------------------------------------------------
 
-print("Stabilizator uruchamia sie...")
-print()
-print("Ustaw drona poziomo!")
-print("Kalibracja za 3 sekundy...")
+-- Odczytujemy orientację automatycznie.
+-- NIE MUSISZ PORUSZAĆ DRONEM.
 
-sleep(3)
-
-local reference = nav.getOrientation()
+local reference =
+    normalizeQuaternion(
+        nav.getOrientation()
+    )
 
 if not reference then
-    error("Navigation Table nie zwrocil orientacji")
+    error("Nie można odczytać orientacji")
 end
 
-print("Poziom zapamietany!")
-print()
-print("Start stabilizacji...")
-
 
 --------------------------------------------------
--- ZMIENNE PD
---------------------------------------------------
-
-local previousRoll = 0
-local previousPitch = 0
-
-
---------------------------------------------------
--- STARTOWE RPM
+-- START
 --------------------------------------------------
 
 front.setSpeed(BASE_RPM)
@@ -151,27 +167,41 @@ right.setSpeed(BASE_RPM)
 
 
 --------------------------------------------------
--- GLOWNA PETLA
+-- PD
+--------------------------------------------------
+
+local previousRoll = 0
+local previousPitch = 0
+
+
+--------------------------------------------------
+-- GŁÓWNA PĘTLA
 --------------------------------------------------
 
 while true do
 
-    local current = nav.getOrientation()
+    local current =
+        nav.getOrientation()
 
     if current then
 
+        current =
+            normalizeQuaternion(current)
+
+
         --------------------------------------------------
-        -- RELATYWNA ORIENTACJA
+        -- BŁĄD ORIENTACJI
         --------------------------------------------------
 
-        local errorQuaternion =
+        local errorQ =
             quaternionMultiply(
                 quaternionInverse(reference),
                 current
             )
 
+
         local roll, pitch =
-            getAngles(errorQuaternion)
+            getAngles(errorQ)
 
 
         --------------------------------------------------
@@ -222,18 +252,7 @@ while true do
 
 
         --------------------------------------------------
-        -- 4 SILNIKI
-        --
-        -- UKLAD:
-        --
-        --             FRONT
-        --               |
-        --               |
-        -- LEFT -------- PC -------- RIGHT
-        --               |
-        --               |
-        --              BACK
-        --
+        -- RPM
         --------------------------------------------------
 
         local frontRPM =
@@ -250,7 +269,24 @@ while true do
 
 
         --------------------------------------------------
-        -- USTAW RPM
+        -- BEZPIECZEŃSTWO
+        --------------------------------------------------
+
+        frontRPM =
+            math.max(0, frontRPM)
+
+        backRPM =
+            math.max(0, backRPM)
+
+        leftRPM =
+            math.max(0, leftRPM)
+
+        rightRPM =
+            math.max(0, rightRPM)
+
+
+        --------------------------------------------------
+        -- RSC
         --------------------------------------------------
 
         front.setSpeed(frontRPM)
@@ -260,7 +296,7 @@ while true do
 
 
         --------------------------------------------------
-        -- INFORMACJE
+        -- MONITOR
         --------------------------------------------------
 
         term.clear()
@@ -270,50 +306,43 @@ while true do
         print()
 
         print(string.format(
-            "Roll : %7.2f deg",
+            "BASE RPM : %.1f",
+            BASE_RPM
+        ))
+
+        print()
+
+        print(string.format(
+            "ROLL     : %7.2f",
             roll
         ))
 
         print(string.format(
-            "Pitch: %7.2f deg",
+            "PITCH    : %7.2f",
             pitch
         ))
 
         print()
 
         print(string.format(
-            "Roll correction : %7.2f",
-            rollCorrection
-        ))
-
-        print(string.format(
-            "Pitch correction: %7.2f",
-            pitchCorrection
-        ))
-
-        print()
-
-        print("RPM:")
-        print(string.format(
-            "Front: %.1f",
+            "FRONT    : %7.2f RPM",
             frontRPM
         ))
 
         print(string.format(
-            "Back : %.1f",
+            "BACK     : %7.2f RPM",
             backRPM
         ))
 
         print(string.format(
-            "Left : %.1f",
+            "LEFT     : %7.2f RPM",
             leftRPM
         ))
 
         print(string.format(
-            "Right: %.1f",
+            "RIGHT    : %7.2f RPM",
             rightRPM
         ))
-
     end
 
     sleep(DT)
