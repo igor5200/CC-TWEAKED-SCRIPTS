@@ -13,30 +13,54 @@ if not right then error("Brak right") end
 local HOVER_RPM = 111
 local TEST_RPM = 20
 local TEST_TIME = 3
+local PAUSE = 2
+
+local function stopSides()
+    front.setTargetSpeed(0)
+    back.setTargetSpeed(0)
+    left.setTargetSpeed(0)
+    right.setTargetSpeed(0)
+end
+
+local function test(name, propeller)
+    print("TEST: " .. name)
+    print("RPM: " .. TEST_RPM)
+
+    propeller.setTargetSpeed(TEST_RPM)
+
+    sleep(TEST_TIME)
+
+    propeller.setTargetSpeed(0)
+
+    print(name .. " STOP")
+    sleep(PAUSE)
+end
 
 -- Wszystkie boczne wyłączone
-front.setTargetSpeed(0)
-back.setTargetSpeed(0)
-left.setTargetSpeed(0)
-right.setTargetSpeed(0)
+stopSides()
 
--- Start zawisu
+-- Uruchomienie głównego ciągu
 top.setTargetSpeed(HOVER_RPM)
 
-print("Dron startuje...")
-print("Zawis za 3 sekundy")
+print("=== DRONE PROP TEST ===")
+print("Hover RPM: " .. HOVER_RPM)
+print("Stabilizacja...")
+sleep(5)
 
-sleep(3)
+-- FRONT
+test("FRONT", front)
 
-print("FRONT -> " .. TEST_RPM .. " RPM")
+-- BACK
+test("BACK", back)
 
-front.setTargetSpeed(TEST_RPM)
+-- LEFT
+test("LEFT", left)
 
-sleep(TEST_TIME)
+-- RIGHT
+test("RIGHT", right)
 
-print("FRONT STOP")
+-- Koniec
+stopSides()
 
-front.setTargetSpeed(0)
-
-print("Test zakonczony")
-print("Dron pozostaje na hover RPM")
+print("=== TEST ZAKONCZONY ===")
+print("TOP nadal pracuje na " .. HOVER_RPM .. " RPM")
