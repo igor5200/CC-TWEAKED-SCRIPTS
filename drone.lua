@@ -9,30 +9,31 @@ if not gimbal then
     error("Brak gimbal_sensor_0")
 end
 
-print("=== DIRECTION TESTER ===")
-print("Nie steruje propellerami.")
-print()
-
 while true do
     local heading = nav.getHeadingRad()
 
-    local pitch, roll = gimbal.getAnglesRad()
+    -- getAnglesRad() zwraca {pitch, roll}
+    local angles = gimbal.getAnglesRad()
+    local pitch = angles[1]
+    local roll  = angles[2]
 
-    -- Kierunek FRONT drona w układzie świata.
-    --
+    -- Kierunek FRONT drona w świecie.
     -- Navigation Table:
-    -- heading = 0 oznacza FRONT w +Z
-    --
-    -- Przyjmujemy:
-    -- world X = wschód/zachód
-    -- world Z = północ/południe
-
+    -- heading = 0 -> FRONT wskazuje world +Z
     local frontX = math.sin(heading)
     local frontZ = math.cos(heading)
 
-    -- Prawa strona drona jest obrócona o +90°
+    -- Kierunek RIGHT drona w świecie.
     local rightX = math.cos(heading)
     local rightZ = -math.sin(heading)
+
+    -- Światowy X+ wyrażony w lokalnym układzie drona.
+    local worldX_front = frontX
+    local worldX_right = rightX
+
+    -- Światowy Z+ wyrażony w lokalnym układzie drona.
+    local worldZ_front = frontZ
+    local worldZ_right = rightZ
 
     term.clear()
     term.setCursorPos(1, 1)
@@ -56,59 +57,48 @@ while true do
     ))
 
     print()
-    print("FRONT vector:")
+    print("FRONT -> WORLD")
     print(string.format(
-        "  X = %+0.3f",
+        "X = %+0.3f",
         frontX
     ))
     print(string.format(
-        "  Z = %+0.3f",
+        "Z = %+0.3f",
         frontZ
     ))
 
     print()
-    print("RIGHT vector:")
+    print("RIGHT -> WORLD")
     print(string.format(
-        "  X = %+0.3f",
+        "X = %+0.3f",
         rightX
     ))
     print(string.format(
-        "  Z = %+0.3f",
+        "Z = %+0.3f",
         rightZ
     ))
 
     print()
-    print("WORLD X+ expressed in drone coordinates:")
-
-    -- Rzut światowego X+ na lokalny FRONT/RIGHT
-    local localFrontX = frontX
-    local localRightX = rightX
-
+    print("WORLD X+ -> DRONE")
     print(string.format(
-        "  FRONT = %+0.3f",
-        localFrontX
+        "FRONT = %+0.3f",
+        worldX_front
     ))
-
     print(string.format(
-        "  RIGHT = %+0.3f",
-        localRightX
+        "RIGHT = %+0.3f",
+        worldX_right
     ))
 
     print()
-    print("WORLD Z+ expressed in drone coordinates:")
-
-    local localFrontZ = frontZ
-    local localRightZ = rightZ
-
+    print("WORLD Z+ -> DRONE")
     print(string.format(
-        "  FRONT = %+0.3f",
-        localFrontZ
+        "FRONT = %+0.3f",
+        worldZ_front
+    ))
+    print(string.format(
+        "RIGHT = %+0.3f",
+        worldZ_right
     ))
 
-    print(string.format(
-        "  RIGHT = %+0.3f",
-        localRightZ
-    ))
-
-    sleep(0.2)
+    sleep(0.1)
 end
