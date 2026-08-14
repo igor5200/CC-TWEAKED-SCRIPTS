@@ -1,706 +1,297 @@
--- ============================================================
--- DRONE V2
---
--- Uzycie:
---   drone <X> <Y> <Z>
---
--- Przyklad:
---   drone 100 70 -250
---
--- GPS:
---   pozycja drona
---
--- Navigation Table:
---   heading
---
--- Gimbal Sensor:
---   pitch / roll
---   pitch rate / roll rate
---
--- Rotation Speed Controllers:
---   front
---   back
---   left
---   right
--- ============================================================
-
-
--- ============================================================
--- ARGUMENTS
--- ============================================================
-
-local targetX = tonumber(arg[1])
-local targetY = tonumber(arg[2])
-local targetZ = tonumber(arg[3])
-
-if not targetX or not targetY or not targetZ then
-    print("Uzycie:")
-    print("drone <X> <Y> <Z>")
-    print()
-    print("Przyklad:")
-    print("drone 100 70 -250")
-    return
-end
-
-
--- ============================================================
--- PERIPHERALS
--- ============================================================
-
 local nav = peripheral.wrap("navigation_table_0")
-local gimbal = peripheral.wrap("gimbal_sensor_0")
 
-local front = peripheral.wrap("front")
-local back  = peripheral.wrap("back")
 local left  = peripheral.wrap("left")
 local right = peripheral.wrap("right")
+local front = peripheral.wrap("front")
+local back  = peripheral.wrap("back")
 
 
-if not nav then
-    error("Nie znaleziono navigation_table_0")
+-- =========================================================
+-- CEL
+-- =========================================================
+
+local TARGET_X = 100
+local TARGET_Y = 80
+local TARGET_Z = 200
+
+
+-- =========================================================
+-- USTAWIENIA
+-- =========================================================
+
+local MAX_POWER = 1.0
+local POSITION_GAIN = 0.03
+local TARGET_RADIUS = 2
+
+
+-- =========================================================
+-- CLAMP
+-- =========================================================
+
+local function clamp(x, min, max)
+
+    if x < min then
+        return min
+    end
+
+    if x > max then
+        return max
+    end
+
+    return x
 end
 
-if not gimbal then
-    error("Nie znaleziono gimbal_sensor_0")
-end
 
-if not front then
-    error("Nie znaleziono controllera: front")
-end
-
-if not back then
-    error("Nie znaleziono controllera: back")
-end
-
-if not left then
-    error("Nie znaleziono controllera: left")
-end
-
-if not right then
-    error("Nie znaleziono controllera: right")
-end
-
-
--- ============================================================
--- SETTINGS
--- ============================================================
-
--- RPM przy którym dron powinien mniej wiecej wisiec.
---
--- DOBIERZ TO DOSWIADCZALNIE.
-local HOVER_RPM = 180
-
-
--- Maksymalny kat przechylenia.
---
--- Na poczatek bardzo maly.
-local MAX_TILT = math.rad(8)
-
-
--- Po ilu blokach chcemy wykorzystac pelny przechyl.
-local DISTANCE_FOR_MAX_TILT = 20
-
-
--- Jak duza korekta RPM moze wykonac PD.
-local MAX_CORRECTION = 30
-
-
--- Maksymalne RPM kontrolera.
-local MAX_RPM = 256
-
-
--- ============================================================
--- PITCH PD
--- ============================================================
-
-local KP_PITCH = 300
-local KD_PITCH = 70
-
-
--- ============================================================
--- ROLL PD
--- ============================================================
-
-local KP_ROLL = 300
-local KD_ROLL = 70
-
-
--- ============================================================
--- SIGNS
--- ============================================================
---
--- Jezeli dron reaguje odwrotnie:
---
--- PITCH:
---   1  = normalnie
---  -1  = odwrotnie
---
--- ROLL:
---   1  = normalnie
---  -1  = odwrotnie
---
-
-local PITCH_SIGN = 1
-local ROLL_SIGN = 1
-
-
--- ============================================================
--- GPS
--- ============================================================
+-- =========================================================
+-- POZYCJA
+-- =========================================================
 
 local function getPosition()
 
-    local x, y, z = gps.locate(2)
+    local p = nav.getPosition()
 
-    if not x then
-        return nil
-    end
-
-    return x, y, z
+    return p.x, p.y, p.z
 end
 
 
--- ============================================================
--- MATH
--- ============================================================
+-- =========================================================
+-- HEADING
+-- =========================================================
 
-local function clamp(value, minValue, maxValue)
+local function getHeading()
 
-    if value < minValue then
-        return minValue
-    end
-
-    if value > maxValue then
-        return maxValue
-    end
-
-    return value
+    return nav.getHeadingRad()
 end
 
 
--- Normalizuje kat do:
--- -PI ... +PI
-local function normalizeAngle(angle)
+-- =========================================================
+-- STEROWANIE
+-- =========================================================
 
-    while angle > math.pi do
-        angle = angle - 2 * math.pi
-    end
+local function setPropellers(l, r, f, b)
 
-    while angle < -math.pi do
-        angle = angle + 2 * math.pi
-    end
+    left.setManualTarget(l)
+    right.setManualTarget(r)
+    front.setManualTarget(f)
+    back.setManualTarget(b)
 
-    return angle
 end
 
 
-local function setRPM(controller, rpm)
+-- =========================================================
+-- WORLD -> LOCAL
+-- =========================================================
 
-    rpm = clamp(
-        rpm,
-        -MAX_RPM,
-        MAX_RPM
-    )
+local function worldToLocal(dx, dz, heading)
 
-    controller.setTargetSpeed(rpm)
+    local forwardX = math.cos(heading)
+    local forwardZ = math.sin(heading)
+
+    local rightX = -math.sin(heading)
+    local rightZ = math.cos(heading)
+
+    local forward =
+        dx * forwardX +
+        dz * forwardZ
+
+    local rightPower =
+        dx * rightX +
+        dz * rightZ
+
+    return forward, rightPower
 end
 
 
--- ============================================================
--- START
--- ============================================================
-
-print("================================")
-print("         DRONE V2")
-print("================================")
-print()
-
-print(
-    string.format(
-        "Target: %.1f %.1f %.1f",
-        targetX,
-        targetY,
-        targetZ
-    )
-)
-
-print()
-print("Starting hover...")
-
-setRPM(front, HOVER_RPM)
-setRPM(back, HOVER_RPM)
-setRPM(left, HOVER_RPM)
-setRPM(right, HOVER_RPM)
-
-sleep(2)
-
-
--- ============================================================
--- MAIN LOOP
--- ============================================================
+-- =========================================================
+-- MAIN
+-- =========================================================
 
 while true do
 
-    -- ========================================================
-    -- GPS
-    -- ========================================================
-
     local x, y, z = getPosition()
 
-    if not x then
+    local heading = getHeading()
+
+
+    -- =====================================================
+    -- WEKTOR DO CELU
+    -- =====================================================
+
+    local dx = TARGET_X - x
+    local dy = TARGET_Y - y
+    local dz = TARGET_Z - z
+
+
+    local distance =
+        math.sqrt(
+            dx * dx +
+            dy * dy +
+            dz * dz
+        )
+
+
+    -- =====================================================
+    -- CEL OSIĄGNIĘTY
+    -- =====================================================
+
+    if distance < TARGET_RADIUS then
+
+        setPropellers(0, 0, 0, 0)
+
+        print("CEL OSIAGNIETY")
+
+    else
+
+        -- =================================================
+        -- WORLD -> LOCAL
+        -- =================================================
+
+        local forwardPower, rightPower =
+            worldToLocal(dx, dz, heading)
+
+
+        -- =================================================
+        -- NORMALIZACJA
+        -- =================================================
+
+        local horizontalDistance =
+            math.sqrt(
+                forwardPower * forwardPower +
+                rightPower * rightPower
+            )
+
+
+        if horizontalDistance > 0 then
+
+            forwardPower =
+                forwardPower / horizontalDistance
+
+            rightPower =
+                rightPower / horizontalDistance
+
+        end
+
+
+        -- =================================================
+        -- SIŁA
+        -- =================================================
+
+        local power =
+            clamp(
+                distance * POSITION_GAIN,
+                0,
+                MAX_POWER
+            )
+
+
+        forwardPower =
+            forwardPower * power
+
+        rightPower =
+            rightPower * power
+
+
+        -- =================================================
+        -- PROPELLERY
+        -- =================================================
+
+        local frontPower =
+            math.max(0, forwardPower)
+
+        local backPower =
+            math.max(0, -forwardPower)
+
+        local rightPowerFinal =
+            math.max(0, rightPower)
+
+        local leftPower =
+            math.max(0, -rightPower)
+
+
+        -- =================================================
+        -- USTAWIENIE
+        -- =================================================
+
+        left.setManualTarget(leftPower)
+        right.setManualTarget(rightPowerFinal)
+
+        front.setManualTarget(frontPower)
+        back.setManualTarget(backPower)
+
+
+        -- =================================================
+        -- DEBUG
+        -- =================================================
 
         term.clear()
         term.setCursorPos(1, 1)
 
-        print("GPS ERROR")
+        print("=== DRONE NAVIGATION ===")
         print()
-        print("Nie mozna znalezc GPS.")
 
-        -- Nie gasimy silnikow od razu.
-        sleep(0.5)
+        print(string.format(
+            "POS %.2f %.2f %.2f",
+            x, y, z
+        ))
+
+        print(string.format(
+            "TARGET %.2f %.2f %.2f",
+            TARGET_X,
+            TARGET_Y,
+            TARGET_Z
+        ))
+
+        print()
+
+        print(string.format(
+            "DIST %.2f",
+            distance
+        ))
+
+        print(string.format(
+            "HEADING %.2f",
+            heading
+        ))
+
+        print()
+
+        print(string.format(
+            "DX %.2f",
+            dx
+        ))
+
+        print(string.format(
+            "DY %.2f",
+            dy
+        ))
+
+        print(string.format(
+            "DZ %.2f",
+            dz
+        ))
+
+        print()
+
+        print(string.format(
+            "FORWARD %.2f",
+            forwardPower
+        ))
+
+        print(string.format(
+            "RIGHT %.2f",
+            rightPower
+        ))
+
+        print()
+
+        print("LEFT  ", leftPower)
+        print("RIGHT ", rightPowerFinal)
+        print("FRONT ", frontPower)
+        print("BACK  ", backPower)
 
-    else
-
-        -- ====================================================
-        -- VECTOR TO TARGET
-        -- ====================================================
-
-        local dx = targetX - x
-        local dy = targetY - y
-        local dz = targetZ - z
-
-        local horizontalDistance =
-            math.sqrt(
-                dx * dx +
-                dz * dz
-            )
-
-        local distance =
-            math.sqrt(
-                dx * dx +
-                dy * dy +
-                dz * dz
-            )
-
-
-        -- ====================================================
-        -- CHECK TARGET
-        -- ====================================================
-
-        local TARGET_REACHED = 2
-
-        if distance < TARGET_REACHED then
-
-            -- Cel osiagniety.
-            --
-            -- Utrzymujemy hover.
-
-            setRPM(front, HOVER_RPM)
-            setRPM(back, HOVER_RPM)
-            setRPM(left, HOVER_RPM)
-            setRPM(right, HOVER_RPM)
-
-            term.clear()
-            term.setCursorPos(1, 1)
-
-            print("================================")
-            print("       TARGET REACHED")
-            print("================================")
-            print()
-
-            print(
-                string.format(
-                    "Position: %.1f %.1f %.1f",
-                    x,
-                    y,
-                    z
-                )
-            )
-
-            print()
-
-            print(
-                string.format(
-                    "Distance: %.2f",
-                    distance
-                )
-            )
-
-            sleep(0.1)
-
-        else
-
-            -- =================================================
-            -- WORLD TARGET ANGLE
-            -- =================================================
-            --
-            -- dx / dz określają kierunek celu na płaszczyźnie.
-            --
-            -- atan2(dx, dz):
-            --
-            -- 0       -> +Z
-            -- +90°    -> +X
-            -- -90°    -> -X
-            --
-
-            local targetWorldAngle =
-                math.atan(dx, dz)
-
-
-            -- =================================================
-            -- DRONE HEADING
-            -- =================================================
-
-            local heading =
-                nav.getHeadingRad()
-
-
-            -- =================================================
-            -- TARGET RELATIVE TO DRONE
-            -- =================================================
-
-            local bearing =
-                normalizeAngle(
-                    targetWorldAngle - heading
-                )
-
-
-            -- =================================================
-            -- DISTANCE -> TILT
-            -- =================================================
-
-            local distanceFactor =
-                clamp(
-                    horizontalDistance /
-                    DISTANCE_FOR_MAX_TILT,
-                    0,
-                    1
-                )
-
-
-            local requestedTilt =
-                MAX_TILT *
-                distanceFactor
-
-
-            -- =================================================
-            -- TARGET PITCH / ROLL
-            -- =================================================
-            --
-            -- bearing:
-            --
-            -- 0°       = przod
-            -- +90°     = prawo
-            -- -90°     = lewo
-            -- 180°     = tyl
-            --
-            -- cos -> przod/tyl
-            -- sin -> lewo/prawo
-            --
-
-            local targetPitch =
-                math.cos(bearing) *
-                requestedTilt *
-                PITCH_SIGN
-
-
-            local targetRoll =
-                math.sin(bearing) *
-                requestedTilt *
-                ROLL_SIGN
-
-
-            -- =================================================
-            -- VERTICAL CONTROL
-            -- =================================================
-            --
-            -- Na razie NIE sterujemy Y.
-            --
-            -- Dron utrzymuje wysokosc przez HOVER_RPM.
-            --
-            -- To celowe:
-            -- najpierw stabilizujemy lot poziomy.
-            --
-
-            -- =================================================
-            -- GIMBAL
-            -- =================================================
-
-            local angles =
-                gimbal.getAnglesRad()
-
-            local rates =
-                gimbal.getAngularRatesRad()
-
-
-            -- Dokumentacja:
-            --
-            -- angles = { pitch, roll }
-            --
-            -- rates = { wx, wy, wz }
-            --
-
-            local pitch =
-                angles[1]
-
-            local roll =
-                angles[2]
-
-
-            local pitchRate =
-                rates[1]
-
-            local rollRate =
-                rates[3]
-
-
-            -- =================================================
-            -- PITCH PD
-            -- =================================================
-
-            local pitchError =
-                targetPitch - pitch
-
-
-            local pitchCorrection =
-                KP_PITCH * pitchError
-                -
-                KD_PITCH * pitchRate
-
-
-            pitchCorrection =
-                clamp(
-                    pitchCorrection,
-                    -MAX_CORRECTION,
-                    MAX_CORRECTION
-                )
-
-
-            -- =================================================
-            -- ROLL PD
-            -- =================================================
-
-            local rollError =
-                targetRoll - roll
-
-
-            local rollCorrection =
-                KP_ROLL * rollError
-                -
-                KD_ROLL * rollRate
-
-
-            rollCorrection =
-                clamp(
-                    rollCorrection,
-                    -MAX_CORRECTION,
-                    MAX_CORRECTION
-                )
-
-
-            -- =================================================
-            -- MOTOR MIXER
-            -- =================================================
-            --
-            -- Pitch:
-            --
-            -- FRONT -
-            -- BACK  +
-            --
-            -- Roll:
-            --
-            -- LEFT  +
-            -- RIGHT -
-            --
-
-            local frontRPM =
-                HOVER_RPM -
-                pitchCorrection
-
-
-            local backRPM =
-                HOVER_RPM +
-                pitchCorrection
-
-
-            local leftRPM =
-                HOVER_RPM +
-                rollCorrection
-
-
-            local rightRPM =
-                HOVER_RPM -
-                rollCorrection
-
-
-            -- =================================================
-            -- LIMIT RPM
-            -- =================================================
-
-            frontRPM =
-                clamp(
-                    frontRPM,
-                    0,
-                    MAX_RPM
-                )
-
-            backRPM =
-                clamp(
-                    backRPM,
-                    0,
-                    MAX_RPM
-                )
-
-            leftRPM =
-                clamp(
-                    leftRPM,
-                    0,
-                    MAX_RPM
-                )
-
-            rightRPM =
-                clamp(
-                    rightRPM,
-                    0,
-                    MAX_RPM
-                )
-
-
-            -- =================================================
-            -- APPLY RPM
-            -- =================================================
-
-            setRPM(front, frontRPM)
-            setRPM(back, backRPM)
-            setRPM(left, leftRPM)
-            setRPM(right, rightRPM)
-
-
-            -- =================================================
-            -- DISPLAY
-            -- =================================================
-
-            term.clear()
-            term.setCursorPos(1, 1)
-
-            print("================================")
-            print("            DRONE V2")
-            print("================================")
-            print()
-
-            print(
-                string.format(
-                    "POS: %.1f %.1f %.1f",
-                    x,
-                    y,
-                    z
-                )
-            )
-
-            print(
-                string.format(
-                    "TARGET: %.1f %.1f %.1f",
-                    targetX,
-                    targetY,
-                    targetZ
-                )
-            )
-
-            print()
-
-            print(
-                string.format(
-                    "Distance: %.2f",
-                    distance
-                )
-            )
-
-            print(
-                string.format(
-                    "Bearing: %.1f deg",
-                    math.deg(bearing)
-                )
-            )
-
-            print()
-
-            print(
-                string.format(
-                    "Pitch: %.2f deg",
-                    math.deg(pitch)
-                )
-            )
-
-            print(
-                string.format(
-                    "Target: %.2f deg",
-                    math.deg(targetPitch)
-                )
-            )
-
-            print()
-
-            print(
-                string.format(
-                    "Roll: %.2f deg",
-                    math.deg(roll)
-                )
-            )
-
-            print(
-                string.format(
-                    "Target: %.2f deg",
-                    math.deg(targetRoll)
-                )
-            )
-
-            print()
-
-            print(
-                string.format(
-                    "Pitch PD: %.2f",
-                    pitchCorrection
-                )
-            )
-
-            print(
-                string.format(
-                    "Roll PD: %.2f",
-                    rollCorrection
-                )
-            )
-
-            print()
-
-            print(
-                string.format(
-                    "FRONT: %d",
-                    math.floor(frontRPM)
-                )
-            )
-
-            print(
-                string.format(
-                    "BACK:  %d",
-                    math.floor(backRPM)
-                )
-            )
-
-            print(
-                string.format(
-                    "LEFT:  %d",
-                    math.floor(leftRPM)
-                )
-            )
-
-            print(
-                string.format(
-                    "RIGHT: %d",
-                    math.floor(rightRPM)
-                )
-            )
-
-            sleep(0.05)
-        end
     end
+
+
+    sleep(0.05)
+
 end
