@@ -6,41 +6,54 @@ local nav = peripheral.wrap("navigation_table_0")
 while true do
 
     local droneX, _, droneZ = gps.locate(1)
-    local heading = nav.getHeadingRad()
 
     if droneX then
 
+        -- Wektor do celu
         local vx = TARGET_X - droneX
         local vz = TARGET_Z - droneZ
 
-        local distance = math.sqrt(vx * vx + vz * vz)
+        -- Heading
+        local heading = nav.getHeadingRad()
+
+        -- Normalizacja headingu do -pi ... +pi
+        heading = (heading + math.pi) % (2 * math.pi) - math.pi
+
+        -- Odległość
+        local distance =
+            math.sqrt(vx * vx + vz * vz)
 
         if distance > 0 then
 
+            -- Wektor jednostkowy świata
+            local worldX = vx / distance
+            local worldZ = vz / distance
+
+            -- WORLD -> DRONE
             local forward =
-                vx * math.sin(heading) +
-                vz * math.cos(heading)
+                worldX * math.sin(heading) +
+                worldZ * math.cos(heading)
 
             local right =
-                vx * math.cos(heading) -
-                vz * math.sin(heading)
-
-            -- normalizacja lokalnego wektora
-            local length =
-                math.sqrt(forward * forward + right * right)
-
-            forward = forward / length
-            right = right / length
+                worldX * math.cos(heading) -
+                worldZ * math.sin(heading)
 
             term.clear()
             term.setCursorPos(1, 1)
 
-            print("=== VECTOR TEST ===")
+            print("=== DIRECTION TEST ===")
             print()
 
-            print("DRONE")
-            print(string.format("X: %.2f", droneX))
-            print(string.format("Z: %.2f", droneZ))
+            print("POSITION")
+            print(string.format(
+                "X: %.2f",
+                droneX
+            ))
+
+            print(string.format(
+                "Z: %.2f",
+                droneZ
+            ))
 
             print()
 
@@ -51,14 +64,26 @@ while true do
             print()
 
             print("WORLD VECTOR")
-            print(string.format("VX: %.2f", vx))
-            print(string.format("VZ: %.2f", vz))
+            print(string.format(
+                "VX: %.2f",
+                vx
+            ))
+
+            print(string.format(
+                "VZ: %.2f",
+                vz
+            ))
 
             print()
 
             print("HEADING")
             print(string.format(
-                "%.2f deg",
+                "RAD: %.4f",
+                heading
+            ))
+
+            print(string.format(
+                "DEG: %.2f",
                 math.deg(heading)
             ))
 
@@ -66,12 +91,12 @@ while true do
 
             print("LOCAL VECTOR")
             print(string.format(
-                "FORWARD: %.3f",
+                "FORWARD: %.4f",
                 forward
             ))
 
             print(string.format(
-                "RIGHT: %.3f",
+                "RIGHT: %.4f",
                 right
             ))
 
@@ -80,17 +105,17 @@ while true do
             if math.abs(forward) > math.abs(right) then
 
                 if forward > 0 then
-                    print("DIRECTION: FRONT")
+                    print(">>> FRONT <<<")
                 else
-                    print("DIRECTION: BACK")
+                    print(">>> BACK <<<")
                 end
 
             else
 
                 if right > 0 then
-                    print("DIRECTION: RIGHT")
+                    print(">>> RIGHT <<<")
                 else
-                    print("DIRECTION: LEFT")
+                    print(">>> LEFT <<<")
                 end
 
             end
@@ -99,9 +124,13 @@ while true do
 
     else
 
+        term.clear()
+        term.setCursorPos(1, 1)
+
         print("GPS ERROR")
 
     end
 
     sleep(0.2)
+
 end
