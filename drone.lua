@@ -27,18 +27,20 @@ local back  = peripheral.wrap("back")
 -- USTAWIENIA
 -- =========================================================
 
--- Maksymalna prędkość RSC
-local MAX_SPEED = 30
+local MAX_SPEED = 40
 
--- Jak szybko zwiększamy siłę wraz z odległością
-local POSITION_GAIN = 1.0
+-- Siła na 1 blok odległości
+local POSITION_GAIN = 1.5
 
--- W tej odległości zatrzymujemy się
+-- Minimalna siła propellera
+local MIN_POWER = 5
+
+-- Promień celu
 local TARGET_RADIUS = 2
 
 
 -- =========================================================
--- FUNKCJE
+-- CLAMP
 -- =========================================================
 
 local function clamp(value, min, max)
@@ -52,8 +54,13 @@ local function clamp(value, min, max)
     end
 
     return value
+
 end
 
+
+-- =========================================================
+-- STOP
+-- =========================================================
 
 local function stop()
 
@@ -65,17 +72,21 @@ local function stop()
 end
 
 
+-- =========================================================
+-- PROPELLERY
+-- =========================================================
+
 local function setPropellers(
-    leftPower,
-    rightPower,
-    frontPower,
-    backPower
+    leftSpeed,
+    rightSpeed,
+    frontSpeed,
+    backSpeed
 )
 
-    left.setTargetSpeed(leftPower)
-    right.setTargetSpeed(rightPower)
-    front.setTargetSpeed(frontPower)
-    back.setTargetSpeed(backPower)
+    left.setTargetSpeed(leftSpeed)
+    right.setTargetSpeed(rightSpeed)
+    front.setTargetSpeed(frontSpeed)
+    back.setTargetSpeed(backSpeed)
 
 end
 
@@ -92,7 +103,6 @@ while true do
 
     local droneX, _, droneZ = gps.locate(1)
 
-
     if not droneX then
 
         stop()
@@ -107,7 +117,7 @@ while true do
     else
 
         -- -------------------------------------------------
-        -- WEKTOR DO CELU W ŚWIECIE
+        -- WEKTOR DO CELU
         -- -------------------------------------------------
 
         local vx = TARGET_X - droneX
@@ -135,20 +145,26 @@ while true do
 
             print("TARGET REACHED")
             print()
-            print("Distance:", distance)
+            print(string.format(
+                "Distance: %.2f",
+                distance
+            ))
 
         else
 
             -- =============================================
-            -- NORMALIZACJA WEKTORA ŚWIATA
+            -- NORMALIZACJA WEKTORA
             -- =============================================
 
-            local worldX = vx / distance
-            local worldZ = vz / distance
+            local worldX =
+                vx / distance
+
+            local worldZ =
+                vz / distance
 
 
             -- =============================================
-            -- HEADING DRONA
+            -- HEADING
             -- =============================================
 
             local heading =
@@ -169,19 +185,23 @@ while true do
 
 
             -- =============================================
-            -- SIŁA ZALEŻNA OD ODLEGŁOŚCI
+            -- SIŁA
             -- =============================================
 
             local power =
+                MIN_POWER +
+                distance * POSITION_GAIN
+
+            power =
                 clamp(
-                    distance * POSITION_GAIN,
-                    0,
+                    power,
+                    MIN_POWER,
                     MAX_SPEED
                 )
 
 
             -- =============================================
-            -- SIŁA W OSI FORWARD / RIGHT
+            -- FORWARD / RIGHT
             -- =============================================
 
             local forwardPower =
@@ -195,16 +215,18 @@ while true do
             -- FRONT / BACK
             -- =============================================
 
-            local frontPower = 0
-            local backPower = 0
+            local frontSpeed = 0
+            local backSpeed = 0
 
             if forwardPower > 0 then
 
-                frontPower = forwardPower
+                frontSpeed =
+                    forwardPower
 
             else
 
-                backPower = -forwardPower
+                backSpeed =
+                    -forwardPower
 
             end
 
@@ -213,16 +235,18 @@ while true do
             -- LEFT / RIGHT
             -- =============================================
 
-            local leftPower = 0
-            local rightPower = 0
+            local leftSpeed = 0
+            local rightSpeed = 0
 
             if rightPower > 0 then
 
-                rightPower = rightPower
+                rightSpeed =
+                    rightPower
 
             else
 
-                leftPower = -rightPower
+                leftSpeed =
+                    -rightPower
 
             end
 
@@ -231,28 +255,44 @@ while true do
             -- OGRANICZENIE
             -- =============================================
 
-            frontPower =
-                clamp(frontPower, 0, MAX_SPEED)
+            frontSpeed =
+                clamp(
+                    frontSpeed,
+                    0,
+                    MAX_SPEED
+                )
 
-            backPower =
-                clamp(backPower, 0, MAX_SPEED)
+            backSpeed =
+                clamp(
+                    backSpeed,
+                    0,
+                    MAX_SPEED
+                )
 
-            leftPower =
-                clamp(leftPower, 0, MAX_SPEED)
+            leftSpeed =
+                clamp(
+                    leftSpeed,
+                    0,
+                    MAX_SPEED
+                )
 
-            rightPower =
-                clamp(rightPower, 0, MAX_SPEED)
+            rightSpeed =
+                clamp(
+                    rightSpeed,
+                    0,
+                    MAX_SPEED
+                )
 
 
             -- =============================================
-            -- PROPELLERY
+            -- STEROWANIE
             -- =============================================
 
             setPropellers(
-                leftPower,
-                rightPower,
-                frontPower,
-                backPower
+                leftSpeed,
+                rightSpeed,
+                frontSpeed,
+                backSpeed
             )
 
 
@@ -328,23 +368,31 @@ while true do
 
             print("POWER")
             print(string.format(
+                "TOTAL: %.1f",
+                power
+            ))
+
+            print()
+
+            print("PROPELLERS")
+            print(string.format(
                 "FRONT: %.1f",
-                frontPower
+                frontSpeed
             ))
 
             print(string.format(
                 "BACK: %.1f",
-                backPower
+                backSpeed
             ))
 
             print(string.format(
                 "LEFT: %.1f",
-                leftPower
+                leftSpeed
             ))
 
             print(string.format(
                 "RIGHT: %.1f",
-                rightPower
+                rightSpeed
             ))
 
         end
