@@ -4,43 +4,37 @@ local right = peripheral.wrap("right")
 
 local HOVER_RPM = 111
 
--- Jak mocno reagujemy na błąd pozycji
+-- Siła sterowania
 local KP = 8
 
--- Maksymalna prędkość bocznych propellerów
+-- Maksymalna moc bocznego propelera
 local MAX_RPM = 50
 
--- Jak blisko celu uznajemy, że jesteśmy
-local POSITION_TOLERANCE = 0.3
+-- Tolerancja pozycji
+local TOLERANCE = 0.2
 
--- ==================================================
--- START
--- ==================================================
-
-top.setTargetSpeed(HOVER_RPM)
-
+-- Wszystko boczne zatrzymane
 left.setTargetSpeed(0)
 right.setTargetSpeed(0)
 
-print("Stabilizacja...")
+-- Rozpocznij zawis
+top.setTargetSpeed(HOVER_RPM)
+
+print("Stabilizacja zawisu...")
 sleep(3)
 
--- Pobierz aktualną pozycję
+-- Pobierz pozycję początkową
 local x, y, z = gps.locate(2)
 
 if not x then
-    error("Nie znaleziono pozycji GPS")
+    error("Brak GPS")
 end
 
--- CEL: 5 bloków w osi X
+-- Lecimy 5 bloków w prawo
 local targetX = x + 5
 
 print("Start X: " .. x)
 print("Cel X:   " .. targetX)
-
--- ==================================================
--- KONTROLER
--- ==================================================
 
 while true do
 
@@ -49,64 +43,52 @@ while true do
     if not currentX then
         left.setTargetSpeed(0)
         right.setTargetSpeed(0)
-
-        print("Brak GPS!")
-
         sleep(0.1)
     else
 
         local errorX = targetX - currentX
 
-        -- Jesteśmy wystarczająco blisko
-        if math.abs(errorX) < POSITION_TOLERANCE then
-
-            left.setTargetSpeed(0)
+        -- Dotarliśmy do celu
+        if math.abs(errorX) <= TOLERANCE then
             right.setTargetSpeed(0)
+            left.setTargetSpeed(0)
 
             print("CEL OSIAGNIETY!")
+            print("X = " .. currentX)
+
             break
         end
 
-        -- P controller
+        -- Im dalej od celu, tym większy ciąg
         local rpm = errorX * KP
 
-        -- Ograniczenie RPM
+        -- Ograniczenie
         rpm = math.max(-MAX_RPM, math.min(MAX_RPM, rpm))
 
-        -- ==================================================
-        -- X+
-        -- RIGHT = dodatnie
-        -- LEFT  = ujemne
-        -- ==================================================
-
         if rpm > 0 then
-
+            -- Ruch X+
             right.setTargetSpeed(rpm)
-            left.setTargetSpeed(-rpm)
+            left.setTargetSpeed(0)
 
         else
-
-            right.setTargetSpeed(rpm)
-            left.setTargetSpeed(-rpm)
-
+            -- Ruch X-
+            left.setTargetSpeed(rpm)
+            right.setTargetSpeed(0)
         end
 
-        print(
-            string.format(
-                "X: %.2f | Target: %.2f | Error: %.2f | RPM: %.2f",
-                currentX,
-                targetX,
-                errorX,
-                rpm
-            )
-        )
+        print(string.format(
+            "X: %.2f | Cel: %.2f | Blad: %.2f | RPM: %.2f",
+            currentX,
+            targetX,
+            errorX,
+            rpm
+        ))
 
         sleep(0.1)
     end
 end
 
--- Zatrzymanie bocznych
 left.setTargetSpeed(0)
 right.setTargetSpeed(0)
 
-print("Dron zatrzymany nad celem.")
+print("Zakonczono.")
