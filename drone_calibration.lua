@@ -1,301 +1,96 @@
-local front = peripheral.wrap("front")
-local back  = peripheral.wrap("back")
-local left  = peripheral.wrap("left")
-local right = peripheral.wrap("right")
+local TARGET_X = 100
+local TARGET_Z = 200
 
-if not front or not back or not left or not right then
-    print("Brakuje Speed Controllera!")
-    return
-end
+local nav = peripheral.wrap("navigation_table_0")
 
--- =========================================
--- SETTINGS
--- =========================================
+while true do
 
-local BASE_RPM = 30
-local TEST_DELTA = 10
-local TEST_TIME = 2
-
--- =========================================
--- MOTOR CONTROL
--- =========================================
-
-local function setMotors(f, b, l, r)
-    front.setTargetSpeed(f)
-    back.setTargetSpeed(b)
-    left.setTargetSpeed(l)
-    right.setTargetSpeed(r)
-end
-
-local function stopMotors()
-    setMotors(0, 0, 0, 0)
-end
-
--- =========================================
--- GPS
--- =========================================
-
-local function getGPS()
-    local x, y, z = gps.locate(3)
+    local x, y, z = gps.locate(1)
+    local heading = nav.getHeadingRad()
 
     if not x then
-        return nil
-    end
+        print("GPS ERROR")
+        sleep(1)
+    else
 
-    return {
-        x = x,
-        y = y,
-        z = z
-    }
-end
+        -- Wektor od drona do celu
+        local vx = TARGET_X - x
+        local vz = TARGET_Z - z
 
--- =========================================
--- VECTOR
--- =========================================
+        -- Odległość pozioma
+        local distance = math.sqrt(vx * vx + vz * vz)
 
-local function difference(a, b)
-    return {
-        x = b.x - a.x,
-        y = b.y - a.y,
-        z = b.z - a.z
-    }
-end
+        if distance > 0 then
 
-local function printVector(v)
-    print(string.format(
-        "dX = %+7.3f  dY = %+7.3f  dZ = %+7.3f",
-        v.x,
-        v.y,
-        v.z
-    ))
-end
+            -- Znormalizowany wektor świata
+            local worldX = vx / distance
+            local worldZ = vz / distance
 
--- =========================================
--- TEST
--- =========================================
+            -- Przeliczenie na układ drona
+            local forward =
+                worldX * math.sin(heading) +
+                worldZ * math.cos(heading)
 
-local function test(name, f, b, l, r)
+            local right =
+                worldX * math.cos(heading) -
+                worldZ * math.sin(heading)
 
-    print("")
-    print("================================")
-    print("TEST: " .. name)
-    print("================================")
+            term.clear()
+            term.setCursorPos(1, 1)
 
-    stopMotors()
+            print("=== DIRECTION TEST ===")
+            print()
 
-    sleep(1)
+            print("DRONE")
+            print("X:", x)
+            print("Z:", z)
 
-    local start = getGPS()
+            print()
 
-    if not start then
-        print("Brak GPS!")
-        return nil
-    end
+            print("TARGET")
+            print("X:", TARGET_X)
+            print("Z:", TARGET_Z)
 
-    print(string.format(
-        "START: %.2f %.2f %.2f",
-        start.x,
-        start.y,
-        start.z
-    ))
+            print()
 
-    print("")
-    print("Silniki:")
-    print("FRONT = " .. f)
-    print("BACK  = " .. b)
-    print("LEFT  = " .. l)
-    print("RIGHT = " .. r)
+            print("WORLD VECTOR")
+            print("VX:", vx)
+            print("VZ:", vz)
 
-    print("")
-    print("Uruchamiam test...")
+            print()
 
-    setMotors(f, b, l, r)
+            print("HEADING")
+            print("RAD:", heading)
+            print("DEG:", math.deg(heading))
 
-    local startTime = os.clock()
+            print()
 
-    while os.clock() - startTime < TEST_TIME do
+            print("LOCAL VECTOR")
+            print("FORWARD:", forward)
+            print("RIGHT:", right)
+
+            print()
+
+            if math.abs(forward) > math.abs(right) then
+
+                if forward > 0 then
+                    print(">>> PRZOD <<<")
+                else
+                    print(">>> TYL <<<")
+                end
+
+            else
+
+                if right > 0 then
+                    print(">>> PRAWO <<<")
+                else
+                    print(">>> LEWO <<<")
+                end
+
+            end
+
+        end
+
         sleep(0.1)
     end
-
-    stopMotors()
-
-    sleep(1)
-
-    local finish = getGPS()
-
-    if not finish then
-        print("Brak GPS po tescie!")
-        return nil
-    end
-
-    local delta = difference(start, finish)
-
-    print("")
-    print("WYNIK:")
-    printVector(delta)
-
-    return delta
 end
-
--- =========================================
--- START
--- =========================================
-
-term.clear()
-term.setCursorPos(1, 1)
-
-print("========================================")
-print("       DRONE MOTOR MIXER CALIBRATION")
-print("========================================")
-print("")
-print("BASE RPM: " .. BASE_RPM)
-print("TEST DELTA: " .. TEST_DELTA)
-print("")
-print("Dron musi miec wolna przestrzen!")
-print("")
-print("ENTER aby rozpoczac")
-
-read()
-
--- =========================================
--- BASE TEST
--- =========================================
-
-print("")
-print("Sprawdzam bazowy ciag...")
-
-local base = getGPS()
-
-if not base then
-    print("Brak GPS!")
-    return
-end
-
-setMotors(
-    BASE_RPM,
-    BASE_RPM,
-    BASE_RPM,
-    BASE_RPM
-)
-
-sleep(2)
-
-stopMotors()
-
-local baseEnd = getGPS()
-
-if baseEnd then
-    local delta = difference(base, baseEnd)
-
-    print("")
-    print("BAZOWY RUCH:")
-    printVector(delta)
-end
-
-sleep(1)
-
--- =========================================
--- PITCH FORWARD
--- =========================================
-
-local pitchPlus = test(
-    "PITCH +",
-    BASE_RPM + TEST_DELTA,
-    BASE_RPM - TEST_DELTA,
-    BASE_RPM,
-    BASE_RPM
-)
-
-print("")
-print("ENTER aby kontynuowac")
-
-read()
-
--- =========================================
--- PITCH BACKWARD
--- =========================================
-
-local pitchMinus = test(
-    "PITCH -",
-    BASE_RPM - TEST_DELTA,
-    BASE_RPM + TEST_DELTA,
-    BASE_RPM,
-    BASE_RPM
-)
-
-print("")
-print("ENTER aby kontynuowac")
-
-read()
-
--- =========================================
--- ROLL RIGHT
--- =========================================
-
-local rollPlus = test(
-    "ROLL +",
-    BASE_RPM,
-    BASE_RPM,
-    BASE_RPM + TEST_DELTA,
-    BASE_RPM - TEST_DELTA
-)
-
-print("")
-print("ENTER aby kontynuowac")
-
-read()
-
--- =========================================
--- ROLL LEFT
--- =========================================
-
-local rollMinus = test(
-    "ROLL -",
-    BASE_RPM,
-    BASE_RPM,
-    BASE_RPM - TEST_DELTA,
-    BASE_RPM + TEST_DELTA
-)
-
--- =========================================
--- END
--- =========================================
-
-stopMotors()
-
-print("")
-print("")
-print("========================================")
-print("             CALIBRATION DONE")
-print("========================================")
-
-print("")
-print("PITCH +:")
-
-if pitchPlus then
-    printVector(pitchPlus)
-end
-
-print("")
-print("PITCH -:")
-
-if pitchMinus then
-    printVector(pitchMinus)
-end
-
-print("")
-print("ROLL +:")
-
-if rollPlus then
-    printVector(rollPlus)
-end
-
-print("")
-print("ROLL -:")
-
-if rollMinus then
-    printVector(rollMinus)
-end
-
-print("")
-print("Wszystkie silniki zatrzymane.")
