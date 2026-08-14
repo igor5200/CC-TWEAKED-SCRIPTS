@@ -1,153 +1,112 @@
--- ==========================================
--- DRONE STABILIZER v1
--- Create Aeronautics + CC:Tweaked
--- Gimbal Sensor + 4 Rotation Speed Controller
--- ==========================================
-
-local sensor = peripheral.find("gimbal_sensor")
-
-local front = peripheral.wrap("front")
-local back  = peripheral.wrap("back")
+local top   = peripheral.wrap("Create_RotationSpeedController_0")
 local left  = peripheral.wrap("left")
 local right = peripheral.wrap("right")
 
-if not sensor then
-    error("Nie znaleziono gimbal_sensor")
+local HOVER_RPM = 111
+
+-- Jak mocno reagujemy na błąd pozycji
+local KP = 8
+
+-- Maksymalna prędkość bocznych propellerów
+local MAX_RPM = 50
+
+-- Jak blisko celu uznajemy, że jesteśmy
+local POSITION_TOLERANCE = 0.3
+
+-- ==================================================
+-- START
+-- ==================================================
+
+top.setTargetSpeed(HOVER_RPM)
+
+left.setTargetSpeed(0)
+right.setTargetSpeed(0)
+
+print("Stabilizacja...")
+sleep(3)
+
+-- Pobierz aktualną pozycję
+local x, y, z = gps.locate(2)
+
+if not x then
+    error("Nie znaleziono pozycji GPS")
 end
 
-if not front or not back or not left or not right then
-    error("Nie znaleziono wszystkich 4 Rotation Speed Controller")
-end
+-- CEL: 5 bloków w osi X
+local targetX = x + 5
 
+print("Start X: " .. x)
+print("Cel X:   " .. targetX)
 
--- ==========================================
--- USTAWIENIA
--- ==========================================
-
--- RPM podczas normalnego zawisu
-local BASE_RPM = 50
-
--- Pitch
-local KP_PITCH = 20
-local KD_PITCH = 5
-
--- Roll
-local KP_ROLL = 20
-local KD_ROLL = 5
-
--- Maksymalna korekta RPM
-local MAX_CORRECTION = 30
-
--- Częstotliwość regulatora
-local DT = 0.05
-
-
--- ==========================================
--- FUNKCJE
--- ==========================================
-
-local function clamp(x, min, max)
-    return math.max(min, math.min(max, x))
-end
-
-
--- ==========================================
--- PĘTLA
--- ==========================================
+-- ==================================================
+-- KONTROLER
+-- ==================================================
 
 while true do
 
-    -- --------------------------------------
-    -- Odczyt kąta
-    -- --------------------------------------
+    local currentX = select(1, gps.locate(2))
 
-    local angles = sensor.getAnglesRad()
+    if not currentX then
+        left.setTargetSpeed(0)
+        right.setTargetSpeed(0)
 
-    local pitch = angles[1]
-    local roll  = angles[2]
+        print("Brak GPS!")
 
+        sleep(0.1)
+    else
 
-    -- --------------------------------------
-    -- Odczyt prędkości kątowej
-    -- --------------------------------------
+        local errorX = targetX - currentX
 
-    local rates = sensor.getAngularRatesRad()
+        -- Jesteśmy wystarczająco blisko
+        if math.abs(errorX) < POSITION_TOLERANCE then
 
-    local pitchRate = rates[1]
-    local rollRate  = rates[3]
+            left.setTargetSpeed(0)
+            right.setTargetSpeed(0)
 
+            print("CEL OSIAGNIETY!")
+            break
+        end
 
-    -- --------------------------------------
-    -- PITCH PD
-    -- --------------------------------------
+        -- P controller
+        local rpm = errorX * KP
 
-    -- Cel = 0 rad
-    local pitchCorrection =
-        (-pitch * KP_PITCH)
-        + (-pitchRate * KD_PITCH)
+        -- Ograniczenie RPM
+        rpm = math.max(-MAX_RPM, math.min(MAX_RPM, rpm))
 
-    pitchCorrection =
-        clamp(
-            pitchCorrection,
-            -MAX_CORRECTION,
-            MAX_CORRECTION
+        -- ==================================================
+        -- X+
+        -- RIGHT = dodatnie
+        -- LEFT  = ujemne
+        -- ==================================================
+
+        if rpm > 0 then
+
+            right.setTargetSpeed(rpm)
+            left.setTargetSpeed(-rpm)
+
+        else
+
+            right.setTargetSpeed(rpm)
+            left.setTargetSpeed(-rpm)
+
+        end
+
+        print(
+            string.format(
+                "X: %.2f | Target: %.2f | Error: %.2f | RPM: %.2f",
+                currentX,
+                targetX,
+                errorX,
+                rpm
+            )
         )
 
-
-    -- --------------------------------------
-    -- ROLL PD
-    -- --------------------------------------
-
-    -- Cel = 0 rad
-    local rollCorrection =
-        (-roll * KP_ROLL)
-        + (-rollRate * KD_ROLL)
-
-    rollCorrection =
-        clamp(
-            rollCorrection,
-            -MAX_CORRECTION,
-            MAX_CORRECTION
-        )
-
-
-    -- --------------------------------------
-    -- MIXER
-    -- --------------------------------------
-
-    local frontRPM =
-        BASE_RPM + pitchCorrection
-
-    local backRPM =
-        BASE_RPM - pitchCorrection
-
-    local leftRPM =
-        BASE_RPM + rollCorrection
-
-    local rightRPM =
-        BASE_RPM - rollCorrection
-
-
-    -- --------------------------------------
-    -- OGRANICZENIE
-    -- --------------------------------------
-
-    frontRPM = clamp(frontRPM, 0, 256)
-    backRPM  = clamp(backRPM,  0, 256)
-    leftRPM  = clamp(leftRPM,  0, 256)
-    rightRPM = clamp(rightRPM, 0, 256)
-
-
-    -- --------------------------------------
-    -- RSC
-    -- --------------------------------------
-
-    front.setTargetSpeed(frontRPM)
-    back.setTargetSpeed(backRPM)
-
-    left.setTargetSpeed(leftRPM)
-    right.setTargetSpeed(rightRPM)
-
-
-    sleep(DT)
+        sleep(0.1)
+    end
 end
+
+-- Zatrzymanie bocznych
+left.setTargetSpeed(0)
+right.setTargetSpeed(0)
+
+print("Dron zatrzymany nad celem.")
