@@ -1,3 +1,21 @@
+-- =========================================================
+-- HORIZONTAL DRONE AUTOPILOT
+-- GPS -> VECTOR -> HEADING -> FRONT/BACK/LEFT/RIGHT
+-- =========================================================
+
+
+-- =========================================================
+-- CEL
+-- =========================================================
+
+local TARGET_X = 100
+local TARGET_Z = 200
+
+
+-- =========================================================
+-- PERIPHERALS
+-- =========================================================
+
 local nav = peripheral.wrap("navigation_table_0")
 
 local left  = peripheral.wrap("left")
@@ -10,13 +28,15 @@ local back  = peripheral.wrap("back")
 -- USTAWIENIA
 -- =========================================================
 
-local MAX_RPM = 100
+-- Maksymalna prędkość RSC.
+-- RSC pozwala na -256 .. +256 RPM.
+local MAX_SPEED = 100
 
--- Jak mocno reagujemy na kierunek celu
-local GAIN = 80
+-- Jak mocno reagujemy na odległość.
+local POSITION_GAIN = 2
 
--- Przy tej odległości zatrzymujemy drona
-local TARGET_DISTANCE = 2
+-- W tej odległości zatrzymujemy drona.
+local TARGET_RADIUS = 2
 
 
 -- =========================================================
@@ -24,6 +44,7 @@ local TARGET_DISTANCE = 2
 -- =========================================================
 
 local function clamp(value, min, max)
+
     if value < min then
         return min
     end
@@ -33,21 +54,55 @@ local function clamp(value, min, max)
     end
 
     return value
+
 end
 
 
 -- =========================================================
--- USTAWIANIE RPM
+-- STOP
 -- =========================================================
 
-local function setRPM(l, r, f, b)
+local function stop()
 
-    left.setTargetSpeed(l)
-    right.setTargetSpeed(r)
-    front.setTargetSpeed(f)
-    back.setTargetSpeed(b)
+    left.setTargetSpeed(0)
+    right.setTargetSpeed(0)
+    front.setTargetSpeed(0)
+    back.setTargetSpeed(0)
 
 end
+
+
+-- =========================================================
+-- USTAWIENIE PROPELLERÓW
+-- =========================================================
+
+local function setPropellers(
+    leftSpeed,
+    rightSpeed,
+    frontSpeed,
+    backSpeed
+)
+
+    left.setTargetSpeed(leftSpeed)
+    right.setTargetSpeed(rightSpeed)
+    front.setTargetSpeed(frontSpeed)
+    back.setTargetSpeed(backSpeed)
+
+end
+
+
+-- =========================================================
+-- START
+-- =========================================================
+
+print("DRONE AUTOPILOT")
+print()
+
+print("Target:")
+print("X =", TARGET_X)
+print("Z =", TARGET_Z)
+
+sleep(2)
 
 
 -- =========================================================
@@ -56,137 +111,315 @@ end
 
 while true do
 
-    -- Kierunek celu względem drona
-    local bearing = nav.getBearingRad()
+    -- -----------------------------------------------------
+    -- GPS
+    -- -----------------------------------------------------
 
-    -- Odległość do celu
-    local distance = nav.getDistanceToTarget()
-
-    -- Różnica wysokości
-    local vertical = nav.getVerticalOffsetToTarget()
+    local droneX, droneY, droneZ = gps.locate(1)
 
 
-    -- =====================================================
-    -- CEL OSIĄGNIĘTY
-    -- =====================================================
+    if not droneX then
 
-    if distance <= TARGET_DISTANCE then
-
-        setRPM(0, 0, 0, 0)
-
-    else
-
-        -- =================================================
-        -- WEKTOR DO CELU
-        -- =================================================
-
-        -- 0 rad = przód
-        -- +pi/2 = prawo
-        -- -pi/2 = lewo
-        -- pi = tył
-
-        local forward = math.cos(bearing)
-        local rightPower = math.sin(bearing)
-
-
-        -- =================================================
-        -- SIŁA ZALEŻNA OD ODLEGŁOŚCI
-        -- =================================================
-
-        local power = math.min(
-            MAX_RPM,
-            distance * GAIN
-        )
-
-
-        forward = forward * power
-        rightPower = rightPower * power
-
-
-        -- =================================================
-        -- MIXER
-        -- =================================================
-
-        local frontRPM = math.max(0, forward)
-        local backRPM  = math.max(0, -forward)
-
-        local rightRPM = math.max(0, rightPower)
-        local leftRPM  = math.max(0, -rightPower)
-
-
-        -- =================================================
-        -- OGRANICZENIE
-        -- =================================================
-
-        frontRPM = clamp(frontRPM, 0, MAX_RPM)
-        backRPM  = clamp(backRPM, 0, MAX_RPM)
-
-        leftRPM  = clamp(leftRPM, 0, MAX_RPM)
-        rightRPM = clamp(rightRPM, 0, MAX_RPM)
-
-
-        -- =================================================
-        -- PROPULSJA
-        -- =================================================
-
-        setRPM(
-            leftRPM,
-            rightRPM,
-            frontRPM,
-            backRPM
-        )
-
-
-        -- =================================================
-        -- DEBUG
-        -- =================================================
+        stop()
 
         term.clear()
         term.setCursorPos(1, 1)
 
-        print("=== DRONE NAVIGATION ===")
+        print("GPS ERROR")
         print()
+        print("Nie mozna znalezc pozycji.")
 
-        print(string.format(
-            "Bearing: %.2f rad",
-            bearing
-        ))
+        sleep(0.2)
 
-        print(string.format(
-            "Bearing: %.1f deg",
-            math.deg(bearing)
-        ))
+    else
 
-        print(string.format(
-            "Distance: %.2f",
-            distance
-        ))
+        -- -------------------------------------------------
+        -- WEKTOR ŚWIATOWY DO CELU
+        -- -------------------------------------------------
 
-        print(string.format(
-            "Vertical: %.2f",
-            vertical
-        ))
+        local vx = TARGET_X - droneX
+        local vz = TARGET_Z - droneZ
 
-        print()
 
-        print(string.format(
-            "Forward: %.2f",
-            forward
-        ))
+        -- -------------------------------------------------
+        -- ODLEGŁOŚĆ
+        -- -------------------------------------------------
 
-        print(string.format(
-            "Right: %.2f",
-            rightPower
-        ))
+        local distance =
+            math.sqrt(
+                vx * vx +
+                vz * vz
+            )
 
-        print()
 
-        print("LEFT  :", leftRPM)
-        print("RIGHT :", rightRPM)
-        print("FRONT :", frontRPM)
-        print("BACK  :", backRPM)
+        -- -------------------------------------------------
+        -- HEADING DRONA
+        -- -------------------------------------------------
+
+        local heading =
+            nav.getHeadingRad()
+
+
+        -- -------------------------------------------------
+        -- CEL OSIĄGNIĘTY
+        -- -------------------------------------------------
+
+        if distance <= TARGET_RADIUS then
+
+            stop()
+
+        else
+
+            -- =============================================
+            -- NORMALIZACJA WEKTORA ŚWIATOWEGO
+            -- =============================================
+
+            local worldX =
+                vx / distance
+
+            local worldZ =
+                vz / distance
+
+
+            -- =============================================
+            -- WORLD -> DRONE
+            --
+            -- Navigation Table:
+            --
+            -- heading = 0
+            --     dron patrzy w +Z
+            --
+            -- dodatni heading:
+            --     +Z drona obraca się w stronę +X
+            -- =============================================
+
+            local forward =
+                worldX * math.sin(heading) +
+                worldZ * math.cos(heading)
+
+
+            local rightDirection =
+                worldX * math.cos(heading) -
+                worldZ * math.sin(heading)
+
+
+            -- =============================================
+            -- SIŁA ZALEŻNA OD ODLEGŁOŚCI
+            -- =============================================
+
+            local power =
+                clamp(
+                    distance * POSITION_GAIN,
+                    0,
+                    MAX_SPEED
+                )
+
+
+            -- =============================================
+            -- WYMAGANA SIŁA
+            -- =============================================
+
+            local forwardPower =
+                forward * power
+
+            local rightPower =
+                rightDirection * power
+
+
+            -- =============================================
+            -- FORWARD / BACK
+            -- =============================================
+
+            local frontSpeed = 0
+            local backSpeed = 0
+
+            if forwardPower > 0 then
+
+                frontSpeed =
+                    forwardPower
+
+            else
+
+                backSpeed =
+                    -forwardPower
+
+            end
+
+
+            -- =============================================
+            -- LEFT / RIGHT
+            -- =============================================
+
+            local leftSpeed = 0
+            local rightSpeed = 0
+
+            if rightPower > 0 then
+
+                rightSpeed =
+                    rightPower
+
+            else
+
+                leftSpeed =
+                    -rightPower
+
+            end
+
+
+            -- =============================================
+            -- OGRANICZENIE
+            -- =============================================
+
+            frontSpeed =
+                clamp(
+                    frontSpeed,
+                    0,
+                    MAX_SPEED
+                )
+
+            backSpeed =
+                clamp(
+                    backSpeed,
+                    0,
+                    MAX_SPEED
+                )
+
+            leftSpeed =
+                clamp(
+                    leftSpeed,
+                    0,
+                    MAX_SPEED
+                )
+
+            rightSpeed =
+                clamp(
+                    rightSpeed,
+                    0,
+                    MAX_SPEED
+                )
+
+
+            -- =============================================
+            -- STEROWANIE
+            -- =============================================
+
+            setPropellers(
+                leftSpeed,
+                rightSpeed,
+                frontSpeed,
+                backSpeed
+            )
+
+
+            -- =============================================
+            -- DEBUG
+            -- =============================================
+
+            term.clear()
+            term.setCursorPos(1, 1)
+
+            print("=== DRONE AUTOPILOT ===")
+            print()
+
+            print("POSITION")
+            print(string.format(
+                "X: %.2f",
+                droneX
+            ))
+
+            print(string.format(
+                "Z: %.2f",
+                droneZ
+            ))
+
+            print()
+
+            print("TARGET")
+            print(string.format(
+                "X: %.2f",
+                TARGET_X
+            ))
+
+            print(string.format(
+                "Z: %.2f",
+                TARGET_Z
+            ))
+
+            print()
+
+            print("VECTOR WORLD")
+
+            print(string.format(
+                "VX: %.2f",
+                vx
+            ))
+
+            print(string.format(
+                "VZ: %.2f",
+                vz
+            ))
+
+            print()
+
+            print(string.format(
+                "DISTANCE: %.2f",
+                distance
+            ))
+
+            print()
+
+            print(string.format(
+                "HEADING: %.2f rad",
+                heading
+            ))
+
+            print(string.format(
+                "HEADING: %.1f deg",
+                math.deg(heading)
+            ))
+
+            print()
+
+            print("LOCAL VECTOR")
+
+            print(string.format(
+                "FORWARD: %.3f",
+                forward
+            ))
+
+            print(string.format(
+                "RIGHT: %.3f",
+                rightDirection
+            ))
+
+            print()
+
+            print("PROPELLERS")
+
+            print(string.format(
+                "LEFT:  %.1f RPM",
+                leftSpeed
+            ))
+
+            print(string.format(
+                "RIGHT: %.1f RPM",
+                rightSpeed
+            ))
+
+            print(string.format(
+                "FRONT: %.1f RPM",
+                frontSpeed
+            ))
+
+            print(string.format(
+                "BACK:  %.1f RPM",
+                backSpeed
+            ))
+
+        end
+
+        sleep(0.1)
 
     end
 
-    sleep(0.05)
 end
