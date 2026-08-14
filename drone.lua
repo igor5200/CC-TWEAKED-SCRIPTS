@@ -160,11 +160,10 @@ end
 -- START
 --------------------------------------------------
 
-front.setSpeed(BASE_RPM)
-back.setSpeed(BASE_RPM)
-left.setSpeed(BASE_RPM)
-right.setSpeed(BASE_RPM)
-
+peripheral.call("front", "setSpeed", frontRPM)
+peripheral.call("back", "setSpeed", backRPM)
+peripheral.call("left", "setSpeed", leftRPM)
+peripheral.call("right", "setSpeed", rightRPM)
 
 --------------------------------------------------
 -- PD
