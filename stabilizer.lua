@@ -5,9 +5,10 @@ local left  = peripheral.wrap("left")
 local right = peripheral.wrap("right")
 
 local HOVER_RPM = 111
-local TEST_RPM = 20
-local TEST_TIME = 3
-local PAUSE = 2
+local MOVE_RPM = 20
+
+local MOVE_TIME = 3
+local PAUSE_TIME = 2
 
 local function stopSides()
     front.setTargetSpeed(0)
@@ -16,33 +17,80 @@ local function stopSides()
     right.setTargetSpeed(0)
 end
 
-local function test(name, propeller, rpm)
-    print("TEST: " .. name .. " | " .. rpm .. " RPM")
-
-    propeller.setTargetSpeed(rpm)
-
-    sleep(TEST_TIME)
-
-    propeller.setTargetSpeed(0)
-
-    print(name .. " STOP")
-    sleep(PAUSE)
+local function hover()
+    stopSides()
+    top.setTargetSpeed(HOVER_RPM)
+    sleep(PAUSE_TIME)
 end
 
-stopSides()
+local function forward()
+    front.setTargetSpeed(MOVE_RPM)
+    back.setTargetSpeed(-MOVE_RPM)
+    left.setTargetSpeed(0)
+    right.setTargetSpeed(0)
 
--- Główny ciąg
+    sleep(MOVE_TIME)
+
+    stopSides()
+end
+
+local function backward()
+    front.setTargetSpeed(-MOVE_RPM)
+    back.setTargetSpeed(MOVE_RPM)
+    left.setTargetSpeed(0)
+    right.setTargetSpeed(0)
+
+    sleep(MOVE_TIME)
+
+    stopSides()
+end
+
+local function leftMove()
+    front.setTargetSpeed(0)
+    back.setTargetSpeed(0)
+    left.setTargetSpeed(-MOVE_RPM)
+    right.setTargetSpeed(MOVE_RPM)
+
+    sleep(MOVE_TIME)
+
+    stopSides()
+end
+
+local function rightMove()
+    front.setTargetSpeed(0)
+    back.setTargetSpeed(0)
+    left.setTargetSpeed(MOVE_RPM)
+    right.setTargetSpeed(-MOVE_RPM)
+
+    sleep(MOVE_TIME)
+
+    stopSides()
+end
+
+-- START
+stopSides()
 top.setTargetSpeed(HOVER_RPM)
 
-print("Hover...")
+print("Dron startuje...")
 sleep(5)
 
--- Kierunki obrotu śmigieł
-test("FRONT", front,  TEST_RPM)
-test("BACK",  back,  -TEST_RPM)
-test("LEFT",  left,  -TEST_RPM)
-test("RIGHT", right,  TEST_RPM)
+print("PRZOD")
+forward()
+hover()
 
-stopSides()
+print("TYŁ")
+backward()
+hover()
+
+print("LEWO")
+leftMove()
+hover()
+
+print("PRAWO")
+rightMove()
+hover()
 
 print("TEST ZAKONCZONY")
+
+stopSides()
+top.setTargetSpeed(0)
