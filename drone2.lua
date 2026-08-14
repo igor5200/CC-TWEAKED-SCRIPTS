@@ -1,87 +1,72 @@
--- ==========================================
--- SIMPLE DRONE PD CONTROLLER
--- CC:Tweaked + Create Aeronautics
--- ==========================================
+-- =========================================================
+-- GPS DRONE 3D
+-- GPS -> VECTOR 3D -> HEADING -> PROPELLER POWER
+-- =========================================================
 
--- ==========================================
--- MOTORS
--- ==========================================
 
-local front = peripheral.wrap("front")
-local back  = peripheral.wrap("back")
+-- =========================================================
+-- CEL
+-- =========================================================
+
+local TARGET_X = -232
+local TARGET_Y = 100
+local TARGET_Z = -59
+
+
+-- =========================================================
+-- URZĄDZENIA
+-- =========================================================
+
+local nav = peripheral.wrap("navigation_table_0")
+
 local left  = peripheral.wrap("left")
 local right = peripheral.wrap("right")
+local front = peripheral.wrap("front")
+local back  = peripheral.wrap("back")
 
-if not front or not back or not left or not right then
-    print("Brakuje Rotation Speed Controller!")
-    return
-end
-
-
--- ==========================================
--- TARGET
--- ==========================================
-
--- USTAW TUTAJ CEL
-
-local TARGET_X = 100
-local TARGET_Y = 80
-local TARGET_Z = 200
+-- Górny propeller
+local vertical =
+    peripheral.wrap("Create_RotationSpeedController_0")
 
 
--- ==========================================
--- SETTINGS
--- ==========================================
+-- =========================================================
+-- USTAWIENIA
+-- =========================================================
 
--- RPM potrzebne do utrzymania zawisu
-local HOVER_RPM = 50
+-- -------------------------
+-- RUCH POZIOMY
+-- -------------------------
 
--- Maksymalna zmiana RPM
-local MAX_CONTROL = 30
+local MAX_HORIZONTAL_SPEED = 40
 
--- PD dla X
-local KP_X = 2.0
-local KD_X = 1.0
+local POSITION_GAIN = 1.5
 
--- PD dla Y
-local KP_Y = 2.0
-local KD_Y = 1.0
-
--- PD dla Z
-local KP_Z = 2.0
-local KD_Z = 1.0
-
--- Jak często działa kontroler
-local DT = 0.05
-
--- Tolerancja dotarcia
-local POSITION_TOLERANCE = 1.0
+local MIN_HORIZONTAL_POWER = 5
 
 
--- ==========================================
--- MOTOR FUNCTION
--- ==========================================
+-- -------------------------
+-- RUCH PIONOWY
+-- -------------------------
 
-local function setMotors(frontRPM, backRPM, leftRPM, rightRPM)
+local MAX_VERTICAL_POWER = 30
 
-    front.setTargetSpeed(frontRPM)
-    back.setTargetSpeed(backRPM)
-    left.setTargetSpeed(leftRPM)
-    right.setTargetSpeed(rightRPM)
+local VERTICAL_GAIN = 2.0
 
-end
+local MIN_VERTICAL_POWER = 5
 
 
-local function stopMotors()
+-- -------------------------
+-- CEL
+-- -------------------------
 
-    setMotors(0, 0, 0, 0)
+local TARGET_RADIUS = 2
 
-end
+local TARGET_HEIGHT = 1
 
 
--- ==========================================
+-- =========================================================
 -- CLAMP
--- ==========================================
+-- =========================================================
 
 local function clamp(value, min, max)
 
@@ -98,321 +83,575 @@ local function clamp(value, min, max)
 end
 
 
--- ==========================================
--- GPS
--- ==========================================
+-- =========================================================
+-- STOP POZIOMY
+-- =========================================================
 
-local function getPosition()
+local function stopHorizontal()
 
-    local x, y, z = gps.locate(2)
-
-    if not x then
-        return nil
-    end
-
-    return x, y, z
+    left.setTargetSpeed(0)
+    right.setTargetSpeed(0)
+    front.setTargetSpeed(0)
+    back.setTargetSpeed(0)
 
 end
 
 
--- ==========================================
+-- =========================================================
+-- STOP PIONOWY
+-- =========================================================
+
+local function stopVertical()
+
+    vertical.setTargetSpeed(0)
+
+end
+
+
+-- =========================================================
+-- STOP CAŁEGO DRONA
+-- =========================================================
+
+local function stop()
+
+    stopHorizontal()
+    stopVertical()
+
+end
+
+
+-- =========================================================
+-- STEROWANIE PIONOWE
+-- =========================================================
+
+local function setVerticalPower(power)
+
+    vertical.setTargetSpeed(power)
+
+end
+
+
+-- =========================================================
 -- START
--- ==========================================
+-- =========================================================
 
-term.clear()
-term.setCursorPos(1, 1)
+print("GPS DRONE 3D")
+print()
 
-print("================================")
-print("       DRONE PD CONTROLLER")
-print("================================")
-print("")
+print("TARGET")
+print("X =", TARGET_X)
+print("Y =", TARGET_Y)
+print("Z =", TARGET_Z)
 
-print(string.format(
-    "TARGET: %.1f %.1f %.1f",
-    TARGET_X,
-    TARGET_Y,
-    TARGET_Z
-))
-
-print("")
-
-local x, y, z = getPosition()
-
-if not x then
-
-    print("Brak GPS!")
-    return
-
-end
-
-print(string.format(
-    "START: %.1f %.1f %.1f",
-    x,
-    y,
-    z
-))
-
-print("")
-print("ENTER aby wystartowac")
-
-read()
+sleep(2)
 
 
--- ==========================================
--- PREVIOUS POSITION
--- ==========================================
-
-local lastX = x
-local lastY = y
-local lastZ = z
-
-
--- ==========================================
--- MAIN LOOP
--- ==========================================
+-- =========================================================
+-- GŁÓWNA PĘTLA
+-- =========================================================
 
 while true do
 
-    -- ======================================
+    -- -----------------------------------------------------
     -- GPS
-    -- ======================================
+    -- -----------------------------------------------------
 
-    local currentX, currentY, currentZ = getPosition()
-
-    if not currentX then
-
-        print("BRAK GPS!")
-
-        stopMotors()
-
-        sleep(0.5)
-
-    else
-
-        -- ==================================
-        -- POSITION ERROR
-        -- ==================================
-
-        local errorX = TARGET_X - currentX
-        local errorY = TARGET_Y - currentY
-        local errorZ = TARGET_Z - currentZ
+    local droneX, droneY, droneZ =
+        gps.locate(1)
 
 
-        -- ==================================
-        -- VELOCITY
-        -- ==================================
+    -- -----------------------------------------------------
+    -- GPS ERROR
+    -- -----------------------------------------------------
 
-        local velocityX =
-            (currentX - lastX) / DT
+    if not droneX then
 
-        local velocityY =
-            (currentY - lastY) / DT
-
-        local velocityZ =
-            (currentZ - lastZ) / DT
-
-
-        -- ==================================
-        -- PD CONTROLLER
-        -- ==================================
-
-        local controlX =
-            KP_X * errorX
-            - KD_X * velocityX
-
-        local controlY =
-            KP_Y * errorY
-            - KD_Y * velocityY
-
-        local controlZ =
-            KP_Z * errorZ
-            - KD_Z * velocityZ
-
-
-        -- ==================================
-        -- LIMIT CONTROL
-        -- ==================================
-
-        controlX =
-            clamp(
-                controlX,
-                -MAX_CONTROL,
-                MAX_CONTROL
-            )
-
-        controlY =
-            clamp(
-                controlY,
-                -MAX_CONTROL,
-                MAX_CONTROL
-            )
-
-        controlZ =
-            clamp(
-                controlZ,
-                -MAX_CONTROL,
-                MAX_CONTROL
-            )
-
-
-        -- ==================================
-        -- MOTOR MIXER
-        -- ==================================
-
-        local frontRPM =
-            HOVER_RPM
-            + controlY
-            + controlZ
-
-        local backRPM =
-            HOVER_RPM
-            + controlY
-            - controlZ
-
-        local leftRPM =
-            HOVER_RPM
-            + controlY
-            + controlX
-
-        local rightRPM =
-            HOVER_RPM
-            + controlY
-            - controlX
-
-
-        -- ==================================
-        -- LIMIT RPM
-        -- ==================================
-
-        frontRPM = math.max(0, frontRPM)
-        backRPM  = math.max(0, backRPM)
-        leftRPM  = math.max(0, leftRPM)
-        rightRPM = math.max(0, rightRPM)
-
-
-        -- ==================================
-        -- SEND TO MOTORS
-        -- ==================================
-
-        setMotors(
-            frontRPM,
-            backRPM,
-            leftRPM,
-            rightRPM
-        )
-
-
-        -- ==================================
-        -- DISTANCE
-        -- ==================================
-
-        local distance =
-            math.sqrt(
-                errorX * errorX +
-                errorY * errorY +
-                errorZ * errorZ
-            )
-
-
-        -- ==================================
-        -- DISPLAY
-        -- ==================================
+        stop()
 
         term.clear()
         term.setCursorPos(1, 1)
 
-        print("DRONE PD CONTROLLER")
-        print("-------------------")
+        print("GPS ERROR")
+        print()
+        print("Nie mozna znalezc pozycji.")
 
-        print(string.format(
-            "POS %.2f %.2f %.2f",
-            currentX,
-            currentY,
-            currentZ
-        ))
-
-        print(string.format(
-            "TARGET %.2f %.2f %.2f",
-            TARGET_X,
-            TARGET_Y,
-            TARGET_Z
-        ))
-
-        print("")
-
-        print(string.format(
-            "ERROR %.2f %.2f %.2f",
-            errorX,
-            errorY,
-            errorZ
-        ))
-
-        print("")
-
-        print(string.format(
-            "VEL %.2f %.2f %.2f",
-            velocityX,
-            velocityY,
-            velocityZ
-        ))
-
-        print("")
-
-        print(string.format(
-            "CTRL %.2f %.2f %.2f",
-            controlX,
-            controlY,
-            controlZ
-        ))
-
-        print("")
-
-        print(string.format(
-            "RPM F:%d B:%d",
-            frontRPM,
-            backRPM
-        ))
-
-        print(string.format(
-            "RPM L:%d R:%d",
-            leftRPM,
-            rightRPM
-        ))
-
-        print("")
-
-        print(string.format(
-            "DISTANCE %.2f",
-            distance
-        ))
+        sleep(0.2)
 
 
-        -- ==================================
-        -- TARGET REACHED
-        -- ==================================
+    else
 
-        if distance < POSITION_TOLERANCE then
+        -- =================================================
+        -- WEKTOR DO CELU
+        -- =================================================
 
-            print("")
-            print("TARGET REACHED!")
+        local vx =
+            TARGET_X - droneX
 
-            stopMotors()
+        local vy =
+            TARGET_Y - droneY
 
-            break
+        local vz =
+            TARGET_Z - droneZ
+
+
+        -- =================================================
+        -- ODLEGŁOŚĆ POZIOMA
+        -- =================================================
+
+        local horizontalDistance =
+            math.sqrt(
+                vx * vx +
+                vz * vz
+            )
+
+
+        -- =================================================
+        -- RÓŻNICA WYSOKOŚCI
+        -- =================================================
+
+        local verticalDistance =
+            math.abs(vy)
+
+
+        -- =================================================
+        -- SPRAWDZENIE CELU
+        -- =================================================
+
+        if horizontalDistance <= TARGET_RADIUS
+            and verticalDistance <= TARGET_HEIGHT then
+
+            stop()
+
+            term.clear()
+            term.setCursorPos(1, 1)
+
+            print("=== TARGET REACHED ===")
+            print()
+
+            print(string.format(
+                "X: %.2f",
+                droneX
+            ))
+
+            print(string.format(
+                "Y: %.2f",
+                droneY
+            ))
+
+            print(string.format(
+                "Z: %.2f",
+                droneZ
+            ))
+
+            print()
+
+            print(string.format(
+                "Horizontal: %.2f",
+                horizontalDistance
+            ))
+
+            print(string.format(
+                "Vertical: %.2f",
+                verticalDistance
+            ))
+
+
+        else
+
+            -- =================================================
+            -- RUCH POZIOMY
+            -- =================================================
+
+            if horizontalDistance > TARGET_RADIUS then
+
+                -- ---------------------------------------------
+                -- NORMALIZACJA WEKTORA X/Z
+                -- ---------------------------------------------
+
+                local worldX =
+                    vx / horizontalDistance
+
+                local worldZ =
+                    vz / horizontalDistance
+
+
+                -- ---------------------------------------------
+                -- HEADING
+                -- ---------------------------------------------
+
+                local heading =
+                    nav.getHeadingRad()
+
+
+                -- ---------------------------------------------
+                -- WORLD -> DRONE
+                --
+                -- TESTOWANA WERSJA
+                -- ---------------------------------------------
+
+                local forward =
+                    -worldX * math.cos(heading) +
+                     worldZ * math.sin(heading)
+
+
+                local rightDirection =
+                    worldX * math.sin(heading) +
+                    worldZ * math.cos(heading)
+
+
+                -- ---------------------------------------------
+                -- SIŁA POZIOMA
+                -- ---------------------------------------------
+
+                local horizontalPower =
+                    MIN_HORIZONTAL_POWER +
+                    horizontalDistance * POSITION_GAIN
+
+
+                horizontalPower =
+                    clamp(
+                        horizontalPower,
+                        MIN_HORIZONTAL_POWER,
+                        MAX_HORIZONTAL_SPEED
+                    )
+
+
+                -- ---------------------------------------------
+                -- FORWARD / RIGHT
+                -- ---------------------------------------------
+
+                local forwardPower =
+                    forward * horizontalPower
+
+                local rightPower =
+                    rightDirection * horizontalPower
+
+
+                -- ---------------------------------------------
+                -- FRONT / BACK
+                -- ---------------------------------------------
+
+                local frontSpeed = 0
+                local backSpeed = 0
+
+
+                if forwardPower > 0 then
+
+                    frontSpeed =
+                        forwardPower
+
+                else
+
+                    backSpeed =
+                        -forwardPower
+
+                end
+
+
+                -- ---------------------------------------------
+                -- LEFT / RIGHT
+                --
+                -- left  -> ruch PRAWO
+                -- right -> ruch LEWO
+                -- ---------------------------------------------
+
+                local leftSpeed = 0
+                local rightSpeed = 0
+
+
+                if rightPower > 0 then
+
+                    leftSpeed =
+                        rightPower
+
+                else
+
+                    rightSpeed =
+                        -rightPower
+
+                end
+
+
+                -- ---------------------------------------------
+                -- OGRANICZENIE
+                -- ---------------------------------------------
+
+                frontSpeed =
+                    clamp(
+                        frontSpeed,
+                        0,
+                        MAX_HORIZONTAL_SPEED
+                    )
+
+                backSpeed =
+                    clamp(
+                        backSpeed,
+                        0,
+                        MAX_HORIZONTAL_SPEED
+                    )
+
+                leftSpeed =
+                    clamp(
+                        leftSpeed,
+                        0,
+                        MAX_HORIZONTAL_SPEED
+                    )
+
+                rightSpeed =
+                    clamp(
+                        rightSpeed,
+                        0,
+                        MAX_HORIZONTAL_SPEED
+                    )
+
+
+                -- ---------------------------------------------
+                -- STEROWANIE
+                -- ---------------------------------------------
+
+                left.setTargetSpeed(
+                    leftSpeed
+                )
+
+                right.setTargetSpeed(
+                    rightSpeed
+                )
+
+                front.setTargetSpeed(
+                    frontSpeed
+                )
+
+                back.setTargetSpeed(
+                    backSpeed
+                )
+
+
+            else
+
+                -- ---------------------------------------------
+                -- JESTEŚMY NAD CELEM X/Z
+                -- ---------------------------------------------
+
+                stopHorizontal()
+
+            end
+
+
+            -- =================================================
+            -- RUCH PIONOWY
+            -- =================================================
+
+            if verticalDistance > TARGET_HEIGHT then
+
+                -- ---------------------------------------------
+                -- SIŁA PIONOWA
+                -- ---------------------------------------------
+
+                local verticalPower =
+                    MIN_VERTICAL_POWER +
+                    verticalDistance * VERTICAL_GAIN
+
+
+                verticalPower =
+                    clamp(
+                        verticalPower,
+                        MIN_VERTICAL_POWER,
+                        MAX_VERTICAL_POWER
+                    )
+
+
+                -- ---------------------------------------------
+                -- KIERUNEK
+                -- ---------------------------------------------
+
+                if vy > 0 then
+
+                    -- CEL JEST WYŻEJ
+
+                    setVerticalPower(
+                        verticalPower
+                    )
+
+                else
+
+                    -- CEL JEST NIŻEJ
+
+                    setVerticalPower(
+                        -verticalPower
+                    )
+
+                end
+
+
+            else
+
+                -- ---------------------------------------------
+                -- WYSOKOŚĆ OSIĄGNIĘTA
+                -- ---------------------------------------------
+
+                stopVertical()
+
+            end
+
+
+            -- =================================================
+            -- DEBUG
+            -- =================================================
+
+            term.clear()
+            term.setCursorPos(1, 1)
+
+            print("=== GPS DRONE 3D ===")
+            print()
+
+
+            -- -------------------------------------------------
+            -- POZYCJA
+            -- -------------------------------------------------
+
+            print("POSITION")
+
+            print(string.format(
+                "X: %.2f",
+                droneX
+            ))
+
+            print(string.format(
+                "Y: %.2f",
+                droneY
+            ))
+
+            print(string.format(
+                "Z: %.2f",
+                droneZ
+            ))
+
+            print()
+
+
+            -- -------------------------------------------------
+            -- CEL
+            -- -------------------------------------------------
+
+            print("TARGET")
+
+            print(string.format(
+                "X: %.2f",
+                TARGET_X
+            ))
+
+            print(string.format(
+                "Y: %.2f",
+                TARGET_Y
+            ))
+
+            print(string.format(
+                "Z: %.2f",
+                TARGET_Z
+            ))
+
+            print()
+
+
+            -- -------------------------------------------------
+            -- WEKTOR
+            -- -------------------------------------------------
+
+            print("VECTOR")
+
+            print(string.format(
+                "VX: %.2f",
+                vx
+            ))
+
+            print(string.format(
+                "VY: %.2f",
+                vy
+            ))
+
+            print(string.format(
+                "VZ: %.2f",
+                vz
+            ))
+
+            print()
+
+
+            -- -------------------------------------------------
+            -- ODLEGŁOŚĆ
+            -- -------------------------------------------------
+
+            print("DISTANCE")
+
+            print(string.format(
+                "HORIZONTAL: %.2f",
+                horizontalDistance
+            ))
+
+            print(string.format(
+                "VERTICAL: %.2f",
+                verticalDistance
+            ))
+
+            print()
+
+
+            -- -------------------------------------------------
+            -- HEADING
+            -- -------------------------------------------------
+
+            local heading =
+                nav.getHeadingRad()
+
+            print("HEADING")
+
+            print(string.format(
+                "%.2f deg",
+                math.deg(heading)
+            ))
+
+            print()
+
+
+            -- -------------------------------------------------
+            -- STATUS
+            -- -------------------------------------------------
+
+            if horizontalDistance >
+                TARGET_RADIUS then
+
+                print("HORIZONTAL: MOVING")
+
+            else
+
+                print("HORIZONTAL: TARGET")
+
+            end
+
+
+            if verticalDistance >
+                TARGET_HEIGHT then
+
+                if vy > 0 then
+
+                    print("VERTICAL: UP")
+
+                else
+
+                    print("VERTICAL: DOWN")
+
+                end
+
+            else
+
+                print("VERTICAL: TARGET")
+
+            end
 
         end
 
 
-        -- ==================================
-        -- SAVE POSITION
-        -- ==================================
-
-        lastX = currentX
-        lastY = currentY
-        lastZ = currentZ
-
-
-        sleep(DT)
+        sleep(0.1)
 
     end
 
