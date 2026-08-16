@@ -166,7 +166,7 @@ while true do
     -- =====================================================
     -- GPS
     -- =====================================================
-
+    local pose = sublevel.getLogicalPose()
     local droneX, droneY, droneZ =
     pose.position.x,
     pose.position.y,
