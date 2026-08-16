@@ -168,7 +168,9 @@ while true do
     -- =====================================================
 
     local droneX, droneY, droneZ =
-        gps.locate(1)
+    pose.position.x,
+    pose.position.y,
+    pose.position.z
 
 
     if not droneX then
