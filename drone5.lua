@@ -1,6 +1,6 @@
 -- =========================================================
 -- GPS DRONE 3D
--- GPS -> VECTOR -> HEADING -> GYROSCOPIC PROPELLERS
+-- GPS -> VECTOR -> HEADING -> 4 GYROSCOPIC PROPELLERS
 -- =========================================================
 
 
@@ -18,52 +18,61 @@ local TARGET_Z = -59
 -- =========================================================
 
 local CRUISE_HEIGHT = 100
+
 local DESCENT_DISTANCE = 50
+
+
+-- =========================================================
+-- URZĄDZENIA
+-- =========================================================
+
+local nav =
+    peripheral.wrap("navigation_table_0")
 
 
 -- =========================================================
 -- GYROSCOPIC PROPELLER BEARINGS
 -- =========================================================
 
-local front = peripheral.wrap("gyroscopic_propeller_bearing_0")
-local right = peripheral.wrap("gyroscopic_propeller_bearing_1")
-local back = peripheral.wrap("gyroscopic_propeller_bearing_2")
-local left = peripheral.wrap("gyroscopic_propeller_bearing_3")
+local front =
+    peripheral.wrap("gyroscopic_propeller_bearing_0")
+
+local right =
+    peripheral.wrap("gyroscopic_propeller_bearing_1")
+
+local back =
+    peripheral.wrap("gyroscopic_propeller_bearing_2")
+
+local left =
+    peripheral.wrap("gyroscopic_propeller_bearing_3")
 
 
 -- =========================================================
 -- ROTATION SPEED CONTROLLERS
 -- =========================================================
 
-local frontRSC = peripheral.wrap("front")
-local rightRSC = peripheral.wrap("right")
-local backRSC = peripheral.wrap("back")
-local leftRSC = peripheral.wrap("left")
+local frontRSC =
+    peripheral.wrap("front")
 
-local vertical =
-    peripheral.wrap("Create_RotationSpeedController_0")
+local rightRSC =
+    peripheral.wrap("right")
+
+local backRSC =
+    peripheral.wrap("back")
+
+local leftRSC =
+    peripheral.wrap("left")
 
 
 -- =========================================================
--- RUCH POZIOMY
+-- USTAWIENIA RUCHU
 -- =========================================================
 
-local MAX_HORIZONTAL_SPEED = 40
+local MAX_SPEED = 40
+
+local MIN_SPEED = 5
 
 local POSITION_GAIN = 1.5
-
-local MIN_HORIZONTAL_POWER = 5
-
-
--- =========================================================
--- RUCH PIONOWY
--- =========================================================
-
-local MAX_VERTICAL_POWER = 30
-
-local VERTICAL_GAIN = 2.0
-
-local MIN_VERTICAL_POWER = 5
 
 
 -- =========================================================
@@ -73,6 +82,13 @@ local MIN_VERTICAL_POWER = 5
 local TARGET_RADIUS = 2
 
 local TARGET_HEIGHT = 1
+
+
+-- =========================================================
+-- MAKSYMALNE WYCHYLENIE GYROSCOPIC PROPELLERA
+-- =========================================================
+
+local MAX_TILT = math.rad(12)
 
 
 -- =========================================================
@@ -90,30 +106,6 @@ local function clamp(value, min, max)
     end
 
     return value
-end
-
-
--- =========================================================
--- STOP POZIOMY
--- =========================================================
-
-local function stopHorizontal()
-
-    frontRSC.setTargetSpeed(0)
-    backRSC.setTargetSpeed(0)
-    leftRSC.setTargetSpeed(0)
-    rightRSC.setTargetSpeed(0)
-
-end
-
-
--- =========================================================
--- STOP PIONOWY
--- =========================================================
-
-local function stopVertical()
-
-    vertical.setTargetSpeed(0)
 
 end
 
@@ -122,12 +114,10 @@ end
 -- STOP
 -- =========================================================
 
-local function stop()
-
-    stopHorizontal()
-    stopVertical()
-
-end
+frontRSC.setTargetSpeed(0)
+rightRSC.setTargetSpeed(0)
+backRSC.setTargetSpeed(0)
+leftRSC.setTargetSpeed(0)
 
 
 -- =========================================================
@@ -152,10 +142,12 @@ sleep(2)
 while true do
 
     -- =====================================================
-    -- GPS
+    -- POZYCJA
     -- =====================================================
 
-    local pose = sublevel.getLogicalPose()
+    local pose =
+        sublevel.getLogicalPose()
+
 
     local droneX =
         pose.position.x
@@ -167,312 +159,350 @@ while true do
         pose.position.z
 
 
-    if not droneX then
+    -- =====================================================
+    -- WEKTOR DO CELU
+    -- =====================================================
 
-        stop()
+    local vx =
+        TARGET_X - droneX
 
-        sleep(0.2)
+    local vz =
+        TARGET_Z - droneZ
+
+
+    local horizontalDistance =
+        math.sqrt(
+            vx * vx +
+            vz * vz
+        )
+
+
+    -- =====================================================
+    -- ŻĄDANA WYSOKOŚĆ
+    -- =====================================================
+
+    local desiredY
+
+
+    if horizontalDistance >= DESCENT_DISTANCE then
+
+        desiredY =
+            CRUISE_HEIGHT
 
     else
 
-        -- =================================================
-        -- WEKTOR DO CELU
-        -- =================================================
+        local t =
+            horizontalDistance /
+            DESCENT_DISTANCE
 
-        local vx =
-            TARGET_X - droneX
 
-        local vz =
-            TARGET_Z - droneZ
-
-
-        -- =================================================
-        -- ODLEGŁOŚĆ
-        -- =================================================
-
-        local horizontalDistance =
-            math.sqrt(
-                vx * vx +
-                vz * vz
-            )
-
-
-        -- =================================================
-        -- WYSOKOŚĆ
-        -- =================================================
-
-        local desiredY
-
-        if horizontalDistance >= DESCENT_DISTANCE then
-
-            desiredY =
-                CRUISE_HEIGHT
-
-        else
-
-            local t =
-                horizontalDistance /
-                DESCENT_DISTANCE
-
-            desiredY =
-                TARGET_Y +
-                (CRUISE_HEIGHT - TARGET_Y) * t
-
-        end
-
-
-        local vy =
-            desiredY - droneY
-
-
-        local verticalDistance =
-            math.abs(vy)
-
-
-        -- =================================================
-        -- CEL OSIĄGNIĘTY
-        -- =================================================
-
-        if horizontalDistance <= TARGET_RADIUS
-            and math.abs(TARGET_Y - droneY) <= TARGET_HEIGHT then
-
-            stop()
-
-            print("TARGET REACHED")
-
-            break
-
-        end
-
-
-        -- =================================================
-        -- RUCH POZIOMY
-        -- =================================================
-
-        if horizontalDistance > TARGET_RADIUS then
-
-            -- ---------------------------------------------
-            -- NORMALNY WEKTOR WORLD
-            -- ---------------------------------------------
-
-            local worldX =
-                vx / horizontalDistance
-
-            local worldZ =
-                vz / horizontalDistance
-
-
-            -- ---------------------------------------------
-            -- HEADING
-            -- ---------------------------------------------
-
-            local heading =
-                nav.getHeadingRad()
-
-
-            -- ---------------------------------------------
-            -- WORLD -> LOCAL
-            -- ---------------------------------------------
-
-            local forward =
-                -worldX * math.cos(heading) +
-                 worldZ * math.sin(heading)
-
-
-            local rightDirection =
-                worldX * math.sin(heading) +
-                worldZ * math.cos(heading)
-
-
-            -- ---------------------------------------------
-            -- SIŁA
-            -- ---------------------------------------------
-
-            local horizontalPower =
-                MIN_HORIZONTAL_POWER +
-                horizontalDistance *
-                POSITION_GAIN
-
-
-            horizontalPower =
-                clamp(
-                    horizontalPower,
-                    MIN_HORIZONTAL_POWER,
-                    MAX_HORIZONTAL_SPEED
-                )
-
-
-            -- ---------------------------------------------
-            -- WEKTOR RUCHU
-            -- ---------------------------------------------
-
-            local targetX =
-                rightDirection
-
-            local targetZ =
-                forward
-
-
-            -- ---------------------------------------------
-            -- NORMALIZACJA
-            -- ---------------------------------------------
-
-            local length =
-                math.sqrt(
-                    targetX * targetX +
-                    targetZ * targetZ
-                )
-
-
-            if length > 0 then
-
-                targetX =
-                    targetX / length
-
-                targetZ =
-                    targetZ / length
-
-            end
-
-
-            -- ---------------------------------------------
-            -- GYROSCOPIC BEARINGS
-            -- ---------------------------------------------
-
-            front.setManualTarget({
-                x = targetX,
-                y = 0,
-                z = targetZ
-            })
-
-            back.setManualTarget({
-                x = targetX,
-                y = 0,
-                z = targetZ
-            })
-
-            left.setManualTarget({
-                x = targetX,
-                y = 0,
-                z = targetZ
-            })
-
-            right.setManualTarget({
-                x = targetX,
-                y = 0,
-                z = targetZ
-            })
-
-
-            -- ---------------------------------------------
-            -- RSC
-            -- ---------------------------------------------
-
-            frontRSC.setTargetSpeed(horizontalPower)
-            backRSC.setTargetSpeed(horizontalPower)
-            leftRSC.setTargetSpeed(horizontalPower)
-            rightRSC.setTargetSpeed(horizontalPower)
-
-        else
-
-            stopHorizontal()
-
-        end
-
-
-        -- =================================================
-        -- PION
-        -- =================================================
-
-        if verticalDistance > TARGET_HEIGHT then
-
-            local verticalPower =
-                MIN_VERTICAL_POWER +
-                verticalDistance *
-                VERTICAL_GAIN
-
-
-            verticalPower =
-                clamp(
-                    verticalPower,
-                    MIN_VERTICAL_POWER,
-                    MAX_VERTICAL_POWER
-                )
-
-
-            if vy > 0 then
-
-                vertical.setTargetSpeed(
-                    verticalPower
-                )
-
-            else
-
-                vertical.setTargetSpeed(
-                    -verticalPower
-                )
-
-            end
-
-        else
-
-            stopVertical()
-
-        end
-
-
-        -- =================================================
-        -- DEBUG
-        -- =================================================
-
-        term.clear()
-        term.setCursorPos(1, 1)
-
-        print("=== GPS DRONE 3D ===")
-        print()
-
-        print(string.format(
-            "POS: %.2f %.2f %.2f",
-            droneX,
-            droneY,
-            droneZ
-        ))
-
-        print(string.format(
-            "TARGET: %.2f %.2f %.2f",
-            TARGET_X,
-            TARGET_Y,
-            TARGET_Z
-        ))
-
-        print()
-
-        print(string.format(
-            "DISTANCE: %.2f",
-            horizontalDistance
-        ))
-
-        print(string.format(
-            "DESIRED Y: %.2f",
-            desiredY
-        ))
-
-        print(string.format(
-            "Y ERROR: %.2f",
-            vy
-        ))
-
-        print()
-
-        print(string.format(
-            "HEADING: %.2f",
-            math.deg(nav.getHeadingRad())
-        ))
-
-        print()
-
-        sleep(0.1)
+        desiredY =
+            TARGET_Y +
+            (CRUISE_HEIGHT - TARGET_Y) * t
 
     end
+
+
+    -- =====================================================
+    -- BŁĄD WYSOKOŚCI
+    -- =====================================================
+
+    local vy =
+        desiredY - droneY
+
+
+    -- =====================================================
+    -- CEL OSIĄGNIĘTY
+    -- =====================================================
+
+    if horizontalDistance <= TARGET_RADIUS
+        and math.abs(TARGET_Y - droneY) <= TARGET_HEIGHT then
+
+        frontRSC.setTargetSpeed(0)
+        rightRSC.setTargetSpeed(0)
+        backRSC.setTargetSpeed(0)
+        leftRSC.setTargetSpeed(0)
+
+        print("TARGET REACHED")
+
+        break
+
+    end
+
+
+    -- =====================================================
+    -- NORMALIZACJA WEKTORA X/Z
+    -- =====================================================
+
+    local worldX = 0
+    local worldZ = 0
+
+
+    if horizontalDistance > 0 then
+
+        worldX =
+            vx / horizontalDistance
+
+        worldZ =
+            vz / horizontalDistance
+
+    end
+
+
+    -- =====================================================
+    -- HEADING
+    -- =====================================================
+
+    local heading =
+        nav.getHeadingRad()
+
+
+    -- =====================================================
+    -- WORLD -> LOCAL
+    -- =====================================================
+
+    local forward =
+        -worldX * math.cos(heading) +
+         worldZ * math.sin(heading)
+
+
+    local rightDirection =
+        worldX * math.sin(heading) +
+        worldZ * math.cos(heading)
+
+
+    -- =====================================================
+    -- SIŁA RUCHU
+    -- =====================================================
+
+    local distanceError =
+        math.sqrt(
+            horizontalDistance * horizontalDistance +
+            vy * vy
+        )
+
+
+    local power =
+        MIN_SPEED +
+        distanceError * POSITION_GAIN
+
+
+    power =
+        clamp(
+            power,
+            MIN_SPEED,
+            MAX_SPEED
+        )
+
+
+    -- =====================================================
+    -- WEKTOR ŻĄDANEGO RUCHU W LOCAL SPACE
+    -- =====================================================
+
+    local desiredX =
+        rightDirection
+
+    local desiredY =
+        vy / math.max(distanceError, 1)
+
+    local desiredZ =
+        forward
+
+
+    -- =====================================================
+    -- NORMALIZACJA
+    -- =====================================================
+
+    local desiredLength =
+        math.sqrt(
+            desiredX * desiredX +
+            desiredY * desiredY +
+            desiredZ * desiredZ
+        )
+
+
+    desiredX =
+        desiredX / desiredLength
+
+    desiredY =
+        desiredY / desiredLength
+
+    desiredZ =
+        desiredZ / desiredLength
+
+
+    -- =====================================================
+    -- DEBUG
+    -- =====================================================
+
+    term.clear()
+    term.setCursorPos(1, 1)
+
+    print("=== GPS DRONE 3D ===")
+    print()
+
+    print("POSITION")
+
+    print(string.format(
+        "X: %.2f",
+        droneX
+    ))
+
+    print(string.format(
+        "Y: %.2f",
+        droneY
+    ))
+
+    print(string.format(
+        "Z: %.2f",
+        droneZ
+    ))
+
+    print()
+
+    print("TARGET")
+
+    print(string.format(
+        "X: %.2f",
+        TARGET_X
+    ))
+
+    print(string.format(
+        "Y: %.2f",
+        TARGET_Y
+    ))
+
+    print(string.format(
+        "Z: %.2f",
+        TARGET_Z
+    ))
+
+    print()
+
+    print("DISTANCE")
+
+    print(string.format(
+        "Horizontal: %.2f",
+        horizontalDistance
+    ))
+
+    print(string.format(
+        "Height error: %.2f",
+        vy
+    ))
+
+    print()
+
+    print("DESIRED VECTOR")
+
+    print(string.format(
+        "X: %.3f",
+        desiredX
+    ))
+
+    print(string.format(
+        "Y: %.3f",
+        desiredY
+    ))
+
+    print(string.format(
+        "Z: %.3f",
+        desiredZ
+    ))
+
+    print()
+
+    print("HEADING")
+
+    print(string.format(
+        "%.2f deg",
+        math.deg(heading)
+    ))
+
+    print()
+
+    print("POWER")
+
+    print(string.format(
+        "%.2f",
+        power
+    ))
+
+
+    -- =====================================================
+    -- GYROSCOPIC PROPELLERS
+    -- =====================================================
+    --
+    -- Na tym etapie ustawiamy wszystkie RSC na tę samą
+    -- moc. Kierunek ciągu jest sterowany przez bearing.
+    --
+    -- UWAGA:
+    -- setManualTarget() musi otrzymać poprawny WORLD VECTOR.
+    -- Dlatego używamy aktualnego normalnego każdego bearingu
+    -- jako podstawy.
+    -- =====================================================
+
+
+    local frontNormal =
+        front.getBlockNormal()
+
+    local rightNormal =
+        right.getBlockNormal()
+
+    local backNormal =
+        back.getBlockNormal()
+
+    local leftNormal =
+        left.getBlockNormal()
+
+
+    -- =====================================================
+    -- DEBUG NORMALI
+    -- =====================================================
+
+    print()
+
+    print("BEARING NORMALS")
+
+    print(string.format(
+        "FRONT: %.2f %.2f %.2f",
+        frontNormal.x,
+        frontNormal.y,
+        frontNormal.z
+    ))
+
+    print(string.format(
+        "RIGHT: %.2f %.2f %.2f",
+        rightNormal.x,
+        rightNormal.y,
+        rightNormal.z
+    ))
+
+    print(string.format(
+        "BACK: %.2f %.2f %.2f",
+        backNormal.x,
+        backNormal.y,
+        backNormal.z
+    ))
+
+    print(string.format(
+        "LEFT: %.2f %.2f %.2f",
+        leftNormal.x,
+        leftNormal.y,
+        leftNormal.z
+    ))
+
+
+    -- =====================================================
+    -- RSC
+    -- =====================================================
+
+    frontRSC.setTargetSpeed(power)
+    rightRSC.setTargetSpeed(power)
+    backRSC.setTargetSpeed(power)
+    leftRSC.setTargetSpeed(power)
+
+
+    sleep(0.1)
 
 end
