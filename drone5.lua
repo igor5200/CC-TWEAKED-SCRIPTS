@@ -444,53 +444,49 @@ while true do
 
 
     local frontNormal =
-        front.getBlockNormal()
+    front.getBlockNormal()
 
-    local rightNormal =
-        right.getBlockNormal()
+local rightNormal =
+    right.getBlockNormal()
 
-    local backNormal =
-        back.getBlockNormal()
+local backNormal =
+    back.getBlockNormal()
 
-    local leftNormal =
-        left.getBlockNormal()
+local leftNormal =
+    left.getBlockNormal()
 
 
-    -- =====================================================
-    -- DEBUG NORMALI
-    -- =====================================================
+print()
 
-    print()
+print("BEARING NORMALS")
 
-    print("BEARING NORMALS")
+print(string.format(
+    "FRONT: %.2f %.2f %.2f",
+    frontNormal[1],
+    frontNormal[2],
+    frontNormal[3]
+))
 
-    print(string.format(
-        "FRONT: %.2f %.2f %.2f",
-        frontNormal.x,
-        frontNormal.y,
-        frontNormal.z
-    ))
+print(string.format(
+    "RIGHT: %.2f %.2f %.2f",
+    rightNormal[1],
+    rightNormal[2],
+    rightNormal[3]
+))
 
-    print(string.format(
-        "RIGHT: %.2f %.2f %.2f",
-        rightNormal.x,
-        rightNormal.y,
-        rightNormal.z
-    ))
+print(string.format(
+    "BACK: %.2f %.2f %.2f",
+    backNormal[1],
+    backNormal[2],
+    backNormal[3]
+))
 
-    print(string.format(
-        "BACK: %.2f %.2f %.2f",
-        backNormal.x,
-        backNormal.y,
-        backNormal.z
-    ))
-
-    print(string.format(
-        "LEFT: %.2f %.2f %.2f",
-        leftNormal.x,
-        leftNormal.y,
-        leftNormal.z
-    ))
+print(string.format(
+    "LEFT: %.2f %.2f %.2f",
+    leftNormal[1],
+    leftNormal[2],
+    leftNormal[3]
+))
 
 
     -- =====================================================
