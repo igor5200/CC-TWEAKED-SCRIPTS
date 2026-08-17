@@ -1,4 +1,4 @@
-```lua
+
 -- =========================================================
 -- GPS DRONE
 -- GPS -> VECTOR -> LOCAL VECTOR -> GYROSCOPIC BEARINGS
@@ -380,4 +380,4 @@ while true do
     sleep(0.1)
 
 end
-```
+
